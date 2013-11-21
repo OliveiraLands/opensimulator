@@ -25,15 +25,47 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-namespace OpenSim.Framework
-{
-    public class ConfigSettings
-    {
-        public string PhysicsEngine                 { get; set; }
-        public string MeshEngineName                { get; set; }
-        public string ClientstackDll                { get; set; }
-        public string LibrariesXMLFile              { get; set; }
+using System;
+using System.Collections.Generic;
+using System.Reflection;
+using NUnit.Framework;
+using OpenMetaverse;
+using OpenSim.Framework;
+using OpenSim.Framework.Communications;
+using OpenSim.Region.Framework.Scenes;
+using OpenSim.Tests.Common;
+using OpenSim.Tests.Common.Mock;
 
-        public const uint DefaultRegionHttpPort = 9000;
+namespace OpenSim.Region.Framework.Scenes.Tests
+{
+    [TestFixture]
+    public class SceneStatisticsTests : OpenSimTestCase
+    {
+        private TestScene m_scene;
+
+        [SetUp]
+        public void Init()
+        {
+            m_scene = new SceneHelpers().SetupScene();
+        }
+
+        [Test]
+        public void TestAddRemovePhysicalLinkset()
+        {
+            Assert.That(m_scene.SceneGraph.GetActiveObjectsCount(), Is.EqualTo(0));
+
+            UUID ownerId = TestHelpers.ParseTail(0x1);
+            SceneObjectGroup so1 = SceneHelpers.CreateSceneObject(3, ownerId, "so1", 0x10);
+            so1.ScriptSetPhysicsStatus(true);
+            m_scene.AddSceneObject(so1);
+
+            Assert.That(m_scene.SceneGraph.GetTotalObjectsCount(), Is.EqualTo(3));
+            Assert.That(m_scene.SceneGraph.GetActiveObjectsCount(), Is.EqualTo(3));
+
+            m_scene.DeleteSceneObject(so1, false);
+
+            Assert.That(m_scene.SceneGraph.GetTotalObjectsCount(), Is.EqualTo(0));
+            Assert.That(m_scene.SceneGraph.GetActiveObjectsCount(), Is.EqualTo(0));
+        }
     }
 }
