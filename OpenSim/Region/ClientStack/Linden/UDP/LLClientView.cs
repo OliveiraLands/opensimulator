@@ -2635,11 +2635,8 @@ namespace OpenSim.Region.ClientStack.LindenUDP
         {
             AvatarSitResponsePacket avatarSitResponse = new AvatarSitResponsePacket();
             avatarSitResponse.SitObject.ID = TargetID;
-            if (CameraAtOffset != Vector3.Zero)
-            {
-                avatarSitResponse.SitTransform.CameraAtOffset = CameraAtOffset;
-                avatarSitResponse.SitTransform.CameraEyeOffset = CameraEyeOffset;
-            }
+            avatarSitResponse.SitTransform.CameraAtOffset = CameraAtOffset;
+            avatarSitResponse.SitTransform.CameraEyeOffset = CameraEyeOffset;
             avatarSitResponse.SitTransform.ForceMouselook = ForceMouseLook;
             avatarSitResponse.SitTransform.AutoPilot = autopilot;
             avatarSitResponse.SitTransform.SitPosition = OffsetPos;
@@ -5218,7 +5215,13 @@ namespace OpenSim.Region.ClientStack.LindenUDP
             update.NameValue = Utils.StringToBytes("FirstName STRING RW SV " + data.Firstname + "\nLastName STRING RW SV " +
                 data.Lastname + "\nTitle STRING RW SV " + data.Grouptitle);
             update.ObjectData = objectData;
-            update.ParentID = data.ParentID;
+
+            SceneObjectPart parentPart = data.ParentPart;
+            if (parentPart != null)
+                update.ParentID = parentPart.ParentGroup.LocalId;
+            else
+                update.ParentID = 0;
+
             update.PathCurve = 16;
             update.PathScaleX = 100;
             update.PathScaleY = 100;
