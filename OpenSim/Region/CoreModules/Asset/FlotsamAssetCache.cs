@@ -248,23 +248,32 @@ namespace OpenSim.Region.CoreModules.Asset
 
         private void UpdateFileCache(string key, AssetBase asset)
         {
-            string filename = GetFileName(asset.ID);
+            string filename = GetFileName(key);
 
             try
             {
-                // If the file is already cached just update access time.
+                // If the file is already cached, don't cache it, just touch it so access time is updated
                 if (File.Exists(filename))
                 {
-                    lock (m_CurrentlyWriting)
+                    // We don't really want to know about sharing
+                    // violations here. If the file is locked, then
+                    // the other thread has updated the time for us.
+                    try
                     {
-                        if (!m_CurrentlyWriting.Contains(filename))
-                            File.SetLastAccessTime(filename, DateTime.Now);
+                        lock (m_CurrentlyWriting)
+                        {
+                            if (!m_CurrentlyWriting.Contains(filename))
+                                File.SetLastAccessTime(filename, DateTime.Now);
+                        }
                     }
-                }
-                else
+                    catch
+                    {
+                    }
+                } 
+                else 
                 {
                     // Once we start writing, make sure we flag that we're writing
-                    // that object to the cache so that we don't try to write the
+                    // that object to the cache so that we don't try to write the 
                     // same file multiple times.
                     lock (m_CurrentlyWriting)
                     {
@@ -276,7 +285,7 @@ namespace OpenSim.Region.CoreModules.Asset
                         else
                         {
                             m_CurrentlyWriting.Add(filename, new ManualResetEvent(false));
-                       }
+                        }
 
 #else
                         if (m_CurrentlyWriting.Contains(filename))
@@ -288,6 +297,7 @@ namespace OpenSim.Region.CoreModules.Asset
                             m_CurrentlyWriting.Add(filename);
                         }
 #endif
+
                     }
 
                     Util.FireAndForget(
@@ -296,7 +306,7 @@ namespace OpenSim.Region.CoreModules.Asset
             }
             catch (Exception e)
             {
-                m_log.WarnFormat(
+                m_log.ErrorFormat(
                     "[FLOTSAM ASSET CACHE]: Failed to update cache for asset {0}.  Exception {1} {2}",
                     asset.ID, e.Message, e.StackTrace);
             }
@@ -330,6 +340,11 @@ namespace OpenSim.Region.CoreModules.Asset
                 m_MemoryHits++;
 
             return asset;
+        }
+
+        private bool CheckFromMemoryCache(string id)
+        {
+            return m_MemoryCache.Contains(id);
         }
 
         /// <summary>
@@ -369,15 +384,16 @@ namespace OpenSim.Region.CoreModules.Asset
 
             if (File.Exists(filename))
             {
-                FileStream stream = null;
                 try
                 {
-                    stream = File.Open(filename, FileMode.Open, FileAccess.Read, FileShare.Read);
-                    BinaryFormatter bformatter = new BinaryFormatter();
+                    using (FileStream stream = File.Open(filename, FileMode.Open, FileAccess.Read, FileShare.Read))
+                    {
+                        BinaryFormatter bformatter = new BinaryFormatter();
 
-                    asset = (AssetBase)bformatter.Deserialize(stream);
+                        asset = (AssetBase)bformatter.Deserialize(stream);
 
-                    m_DiskHits++;
+                        m_DiskHits++;
+                    }
                 }
                 catch (System.Runtime.Serialization.SerializationException e)
                 {
@@ -397,14 +413,36 @@ namespace OpenSim.Region.CoreModules.Asset
                         "[FLOTSAM ASSET CACHE]: Failed to get file {0} for asset {1}.  Exception {2} {3}",
                         filename, id, e.Message, e.StackTrace);
                 }
-                finally
-                {
-                    if (stream != null)
-                        stream.Close();
-                }
             }
 
             return asset;
+        }
+
+        private bool CheckFromFileCache(string id)
+        {
+            bool found = false;
+
+            string filename = GetFileName(id);
+
+            if (File.Exists(filename))
+            {
+                try
+                {
+                    using (FileStream stream = File.Open(filename, FileMode.Open, FileAccess.Read, FileShare.Read))
+                    {
+                        if (stream != null)
+                            found = true;
+                    }
+                }
+                catch (Exception e)
+                {
+                    m_log.ErrorFormat(
+                        "[FLOTSAM ASSET CACHE]: Failed to check file {0} for asset {1}.  Exception {2} {3}",
+                        filename, id, e.Message, e.StackTrace);
+                }
+            }
+
+            return found;
         }
 
         public AssetBase Get(string id)
@@ -432,6 +470,16 @@ namespace OpenSim.Region.CoreModules.Asset
             }
 
             return asset;
+        }
+
+        public bool Check(string id)
+        {
+            if (m_MemoryCacheEnabled && CheckFromMemoryCache(id))
+                return true;
+
+            if (m_FileCacheEnabled && CheckFromFileCache(id))
+                return true;
+            return false;
         }
 
         public AssetBase GetCached(string id)
@@ -723,7 +771,7 @@ namespace OpenSim.Region.CoreModules.Asset
             UuidGatherer gatherer = new UuidGatherer(m_AssetService);
 
             HashSet<UUID> uniqueUuids = new HashSet<UUID>();
-            Dictionary<UUID, AssetType> assets = new Dictionary<UUID, AssetType>();
+            Dictionary<UUID, sbyte> assets = new Dictionary<UUID, sbyte>();
 
             foreach (Scene s in m_Scenes)
             {
@@ -746,7 +794,7 @@ namespace OpenSim.Region.CoreModules.Asset
                         else if (storeUncached)
                         {
                             AssetBase cachedAsset = m_AssetService.Get(assetID.ToString());
-                            if (cachedAsset == null && assets[assetID] != AssetType.Unknown)
+                            if (cachedAsset == null && assets[assetID] != (sbyte)AssetType.Unknown)
                                 m_log.DebugFormat(
                                 "[FLOTSAM ASSET CACHE]: Could not find asset {0}, type {1} referenced by object {2} at {3} in scene {4} when pre-caching all scene assets",
                                     assetID, assets[assetID], e.Name, e.AbsolutePosition, s.Name);
@@ -915,10 +963,10 @@ namespace OpenSim.Region.CoreModules.Asset
                     case "assets":
                         con.Output("Ensuring assets are cached for all scenes.");
 
-                        Util.FireAndForget(delegate {
+                        Util.RunThreadNoTimeout(delegate {
                             int assetReferenceTotal = TouchAllSceneAssets(true);
                             con.OutputFormat("Completed check with {0} assets.", assetReferenceTotal);
-                        });
+                        }, "TouchAllSceneAssets", null);
 
                         break;
 
@@ -988,6 +1036,18 @@ namespace OpenSim.Region.CoreModules.Asset
             AssetBase asset = Get(id);
             handler(id, sender, asset);
             return true;
+        }
+
+        public bool[] AssetsExist(string[] ids)
+        {
+            bool[] exist = new bool[ids.Length];
+            
+            for (int i = 0; i < ids.Length; i++)
+            {
+                exist[i] = Check(ids[i]);
+            }
+            
+            return exist;
         }
 
         public string Store(AssetBase asset)

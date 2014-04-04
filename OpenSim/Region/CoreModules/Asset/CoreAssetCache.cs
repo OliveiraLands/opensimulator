@@ -112,6 +112,11 @@ namespace OpenSim.Region.CoreModules.Asset
         ////////////////////////////////////////////////////////////
         // IImprovedAssetCache
         //
+        public bool Check(string id)
+        {
+            // XXX This is probably not an efficient implementation.
+            return Get(id) != null;
+        }
 
         public void Cache(AssetBase asset)
         {

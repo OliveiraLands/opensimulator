@@ -45,14 +45,12 @@ namespace OpenSim.Region.CoreModules.World.Land
         #region Member Variables
 
         private static readonly ILog m_log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
-        #pragma warning disable 0429
-        private const int landArrayMax = ((int)((int)Constants.RegionSize / 4) >= 64) ? (int)((int)Constants.RegionSize / 4) : 64;
-        #pragma warning restore 0429
-        private bool[,] m_landBitmap = new bool[landArrayMax,landArrayMax];
+        private static readonly string LogHeader = "[LAND OBJECT]";
+
+        private readonly int landUnit = 4;
 
         private int m_lastSeqId = 0;
-
-        protected LandData m_landData = new LandData();        
+              
         protected Scene m_scene;
         protected List<SceneObjectGroup> primsOverMe = new List<SceneObjectGroup>();
         protected Dictionary<uint, UUID> m_listTransactions = new Dictionary<uint, UUID>();
@@ -60,27 +58,18 @@ namespace OpenSim.Region.CoreModules.World.Land
         protected ExpiringCache<UUID, bool> m_groupMemberCache = new ExpiringCache<UUID, bool>();
         protected TimeSpan m_groupMemberCacheTimeout = TimeSpan.FromSeconds(30);  // cache invalidation after 30 seconds
 
-        public bool[,] LandBitmap
-        {
-            get { return m_landBitmap; }
-            set { m_landBitmap = value; }
-        }
+        public bool[,] LandBitmap { get; set; }
 
         #endregion
 
         public int GetPrimsFree()
         {
             m_scene.EventManager.TriggerParcelPrimCountUpdate();
-            int free = GetSimulatorMaxPrimCount() - m_landData.SimwidePrims;
+            int free = GetSimulatorMaxPrimCount() - LandData.SimwidePrims;
             return free;
         }
 
-        public LandData LandData
-        {
-            get { return m_landData; }
-
-            set { m_landData = value; }
-        }
+        public LandData LandData { get; set; }
 
         public IPrimCounts PrimCounts { get; set; }
 
@@ -93,15 +82,17 @@ namespace OpenSim.Region.CoreModules.World.Land
         {
             get
             {
-                for (int y = 0; y < landArrayMax; y++)
+                for (int y = 0; y < LandBitmap.GetLength(1); y++)
                 {
-                    for (int x = 0; x < landArrayMax; x++)
+                    for (int x = 0; x < LandBitmap.GetLength(0); x++)
                     {
                         if (LandBitmap[x, y])
-                            return new Vector3(x * 4, y * 4, 0);
+                            return new Vector3(x * landUnit, y * landUnit, 0);
                     }
                 }
 
+                m_log.ErrorFormat("{0} StartPoint. No start point found. bitmapSize=<{1},{2}>",
+                                    LogHeader, LandBitmap.GetLength(0), LandBitmap.GetLength(1));
                 return new Vector3(-1, -1, -1);
             }
         }
@@ -110,17 +101,19 @@ namespace OpenSim.Region.CoreModules.World.Land
         {
             get
             {
-                for (int y = landArrayMax - 1; y >= 0; y--)
+                for (int y = LandBitmap.GetLength(1) - 1; y >= 0; y--)
                 {
-                    for (int x = landArrayMax - 1; x >= 0; x--)
+                    for (int x = LandBitmap.GetLength(0) - 1; x >= 0; x--)
                     {
                         if (LandBitmap[x, y])
                         {
-                            return new Vector3(x * 4 + 4, y * 4 + 4, 0);
+                            return new Vector3(x * landUnit + landUnit, y * landUnit + landUnit, 0);
                         }
                     }
                 }
 
+                m_log.ErrorFormat("{0} EndPoint. No end point found. bitmapSize=<{1},{2}>",
+                                    LogHeader, LandBitmap.GetLength(0), LandBitmap.GetLength(1));
                 return new Vector3(-1, -1, -1);
             }
         }
@@ -130,6 +123,12 @@ namespace OpenSim.Region.CoreModules.World.Land
         public LandObject(UUID owner_id, bool is_group_owned, Scene scene)
         {
             m_scene = scene;
+            if (m_scene == null)
+                LandBitmap = new bool[Constants.RegionSize / landUnit, Constants.RegionSize / landUnit];
+            else
+                LandBitmap = new bool[m_scene.RegionInfo.RegionSizeX / landUnit, m_scene.RegionInfo.RegionSizeY / landUnit];
+
+            LandData = new LandData(); 
             LandData.OwnerID = owner_id;
             if (is_group_owned)
                 LandData.GroupID = owner_id;
@@ -152,9 +151,9 @@ namespace OpenSim.Region.CoreModules.World.Land
         /// <returns>Returns true if the piece of land contains the specified point</returns>
         public bool ContainsPoint(int x, int y)
         {
-            if (x >= 0 && y >= 0 && x < Constants.RegionSize && y < Constants.RegionSize)
+            if (x >= 0 && y >= 0 && x < m_scene.RegionInfo.RegionSizeX && y < m_scene.RegionInfo.RegionSizeY)
             {
-                return (LandBitmap[x / 4, y / 4] == true);
+                return LandBitmap[x / landUnit, y / landUnit];
             }
             else
             {
@@ -194,7 +193,7 @@ namespace OpenSim.Region.CoreModules.World.Land
             else
             {
                 // Normal Calculations
-                int parcelMax = (int)(((float)LandData.Area / 65536.0f)
+                int parcelMax = (int)(((float)LandData.Area / (m_scene.RegionInfo.RegionSizeX * m_scene.RegionInfo.RegionSizeY))
                               * (float)m_scene.RegionInfo.ObjectCapacity
                               * (float)m_scene.RegionInfo.RegionSettings.ObjectBonus);
                 // TODO: The calculation of ObjectBonus should be refactored. It does still not work in the same manner as SL!
@@ -211,7 +210,7 @@ namespace OpenSim.Region.CoreModules.World.Land
             else
             {
                 //Normal Calculations
-                int simMax = (int)(((float)LandData.SimwideArea / 65536.0f)
+                int simMax = (int)(((float)LandData.SimwideArea / (m_scene.RegionInfo.RegionSizeX * m_scene.RegionInfo.RegionSizeY))
                            * (float)m_scene.RegionInfo.ObjectCapacity);
                 return simMax;
             }
@@ -224,7 +223,12 @@ namespace OpenSim.Region.CoreModules.World.Land
         public void SendLandProperties(int sequence_id, bool snap_selection, int request_result, IClientAPI remote_client)
         {
             IEstateModule estateModule = m_scene.RequestModuleInterface<IEstateModule>();
-            uint regionFlags = 336723974 & ~((uint)(RegionFlags.AllowLandmark | RegionFlags.AllowSetHome));
+            // uint regionFlags = 336723974 & ~((uint)(RegionFlags.AllowLandmark | RegionFlags.AllowSetHome));
+            uint regionFlags = (uint)(RegionFlags.PublicAllowed
+                                    | RegionFlags.AllowDirectTeleport
+                                    | RegionFlags.AllowParcelChanges
+                                    | RegionFlags.AllowVoice );
+
             if (estateModule != null)
                 regionFlags = estateModule.GetRegionFlags();
 
@@ -414,6 +418,19 @@ namespace OpenSim.Region.CoreModules.World.Land
             return false;
         }
 
+        public bool CanBeOnThisLand(UUID avatar, float posHeight)
+        {
+            if (posHeight < LandChannel.BAN_LINE_SAFETY_HIEGHT && IsBannedFromLand(avatar))
+            {
+                return false;
+            }
+            else if (IsRestrictedFromLand(avatar))
+            {
+                return false;
+            }
+            return true;
+        }
+
         public bool HasGroupAccess(UUID avatar)
         {
             if (LandData.GroupID != UUID.Zero && (LandData.Flags & (uint)ParcelFlags.UseAccessGroup) == (uint)ParcelFlags.UseAccessGroup)
@@ -546,8 +563,8 @@ namespace OpenSim.Region.CoreModules.World.Land
                 try
                 {
                     over =
-                        m_scene.LandChannel.GetLandObject(Util.Clamp<int>((int)Math.Round(avatar.AbsolutePosition.X), 0, ((int)Constants.RegionSize - 1)),
-                                                          Util.Clamp<int>((int)Math.Round(avatar.AbsolutePosition.Y), 0, ((int)Constants.RegionSize - 1)));
+                        m_scene.LandChannel.GetLandObject(Util.Clamp<int>((int)Math.Round(avatar.AbsolutePosition.X), 0, ((int)m_scene.RegionInfo.RegionSizeX - 1)),
+                                                          Util.Clamp<int>((int)Math.Round(avatar.AbsolutePosition.Y), 0, ((int)m_scene.RegionInfo.RegionSizeY - 1)));
                 }
                 catch (Exception)
                 {
@@ -694,15 +711,15 @@ namespace OpenSim.Region.CoreModules.World.Land
         /// </summary>
         private void UpdateAABBAndAreaValues()
         {
-            int min_x = 64;
-            int min_y = 64;
+            int min_x = 10000;
+            int min_y = 10000;
             int max_x = 0;
             int max_y = 0;
             int tempArea = 0;
             int x, y;
-            for (x = 0; x < 64; x++)
+            for (x = 0; x < LandBitmap.GetLength(0); x++)
             {
-                for (y = 0; y < 64; y++)
+                for (y = 0; y < LandBitmap.GetLength(1); y++)
                 {
                     if (LandBitmap[x, y] == true)
                     {
@@ -710,31 +727,31 @@ namespace OpenSim.Region.CoreModules.World.Land
                         if (min_y > y) min_y = y;
                         if (max_x < x) max_x = x;
                         if (max_y < y) max_y = y;
-                        tempArea += 16; //16sqm peice of land
+                        tempArea += landUnit * landUnit; //16sqm peice of land
                     }
                 }
             }
-            int tx = min_x * 4;
-            if (tx > ((int)Constants.RegionSize - 1))
-                tx = ((int)Constants.RegionSize - 1);
-            int ty = min_y * 4;
-            if (ty > ((int)Constants.RegionSize - 1))
-                ty = ((int)Constants.RegionSize - 1);
+            int tx = min_x * landUnit;
+            if (tx > ((int)m_scene.RegionInfo.RegionSizeX - 1))
+                tx = ((int)m_scene.RegionInfo.RegionSizeX - 1);
+            int ty = min_y * landUnit;
+            if (ty > ((int)m_scene.RegionInfo.RegionSizeY - 1))
+                ty = ((int)m_scene.RegionInfo.RegionSizeY - 1);
 
             LandData.AABBMin =
                 new Vector3(
-                    (float)(min_x * 4), (float)(min_y * 4), m_scene != null ? (float)m_scene.Heightmap[tx, ty] : 0);
+                    (float)(min_x * landUnit), (float)(min_y * landUnit), m_scene != null ? (float)m_scene.Heightmap[tx, ty] : 0);
 
-            tx = max_x * 4;
-            if (tx > ((int)Constants.RegionSize - 1))
-                tx = ((int)Constants.RegionSize - 1);
-            ty = max_y * 4;
-            if (ty > ((int)Constants.RegionSize - 1))
-                ty = ((int)Constants.RegionSize - 1);
+            tx = max_x * landUnit;
+            if (tx > ((int)m_scene.RegionInfo.RegionSizeX - 1))
+                tx = ((int)m_scene.RegionInfo.RegionSizeX - 1);
+            ty = max_y * landUnit;
+            if (ty > ((int)m_scene.RegionInfo.RegionSizeY - 1))
+                ty = ((int)m_scene.RegionInfo.RegionSizeY - 1);
 
             LandData.AABBMax 
                 = new Vector3(
-                    (float)(max_x * 4), (float)(max_y * 4), m_scene != null ? (float)m_scene.Heightmap[tx, ty] : 0);
+                    (float)(max_x * landUnit), (float)(max_y * landUnit), m_scene != null ? (float)m_scene.Heightmap[tx, ty] : 0);
 
             LandData.Area = tempArea;
         }
@@ -746,20 +763,12 @@ namespace OpenSim.Region.CoreModules.World.Land
         /// <summary>
         /// Sets the land's bitmap manually
         /// </summary>
-        /// <param name="bitmap">64x64 block representing where this land is on a map</param>
+        /// <param name="bitmap">block representing where this land is on a map mapped in a 4x4 meter grid</param>
         public void SetLandBitmap(bool[,] bitmap)
         {
-            if (bitmap.GetLength(0) != 64 || bitmap.GetLength(1) != 64 || bitmap.Rank != 2)
-            {
-                //Throw an exception - The bitmap is not 64x64
-                //throw new Exception("Error: Invalid Parcel Bitmap");
-            }
-            else
-            {
-                //Valid: Lets set it
-                LandBitmap = bitmap;
-                ForceUpdateLandInfo();
-            }
+            LandBitmap = bitmap;
+            // m_log.DebugFormat("{0} SetLandBitmap. BitmapSize=<{1},{2}>", LogHeader, LandBitmap.GetLength(0), LandBitmap.GetLength(1));
+            ForceUpdateLandInfo();
         }
 
         /// <summary>
@@ -773,15 +782,19 @@ namespace OpenSim.Region.CoreModules.World.Land
 
         public bool[,] BasicFullRegionLandBitmap()
         {
-            return GetSquareLandBitmap(0, 0, (int) Constants.RegionSize, (int) Constants.RegionSize);
+            return GetSquareLandBitmap(0, 0, (int)m_scene.RegionInfo.RegionSizeX, (int) m_scene.RegionInfo.RegionSizeY);
         }
         
         public bool[,] GetSquareLandBitmap(int start_x, int start_y, int end_x, int end_y)
         {
-            bool[,] tempBitmap = new bool[64,64];
+            // Empty bitmap for the whole region
+            bool[,] tempBitmap = new bool[m_scene.RegionInfo.RegionSizeX / landUnit, m_scene.RegionInfo.RegionSizeY / landUnit];
             tempBitmap.Initialize();
 
+            // Fill the bitmap square area specified by state and end
             tempBitmap = ModifyLandBitmapSquare(tempBitmap, start_x, start_y, end_x, end_y, true);
+            // m_log.DebugFormat("{0} GetSquareLandBitmap. tempBitmapSize=<{1},{2}>",
+            //                         LogHeader, tempBitmap.GetLength(0), tempBitmap.GetLength(1));
             return tempBitmap;
         }
 
@@ -798,24 +811,20 @@ namespace OpenSim.Region.CoreModules.World.Land
         public bool[,] ModifyLandBitmapSquare(bool[,] land_bitmap, int start_x, int start_y, int end_x, int end_y,
                                               bool set_value)
         {
-            if (land_bitmap.GetLength(0) != 64 || land_bitmap.GetLength(1) != 64 || land_bitmap.Rank != 2)
-            {
-                //Throw an exception - The bitmap is not 64x64
-                //throw new Exception("Error: Invalid Parcel Bitmap in modifyLandBitmapSquare()");
-            }
-
             int x, y;
-            for (y = 0; y < 64; y++)
+            for (y = 0; y < land_bitmap.GetLength(1); y++)
             {
-                for (x = 0; x < 64; x++)
+                for (x = 0; x < land_bitmap.GetLength(0); x++)
                 {
-                    if (x >= start_x / 4 && x < end_x / 4
-                        && y >= start_y / 4 && y < end_y / 4)
+                    if (x >= start_x / landUnit && x < end_x / landUnit
+                        && y >= start_y / landUnit && y < end_y / landUnit)
                     {
                         land_bitmap[x, y] = set_value;
                     }
                 }
             }
+            // m_log.DebugFormat("{0} ModifyLandBitmapSquare. startXY=<{1},{2}>, endXY=<{3},{4}>, val={5}, landBitmapSize=<{6},{7}>",
+            //                         LogHeader, start_x, start_y, end_x, end_y, set_value, land_bitmap.GetLength(0), land_bitmap.GetLength(1));
             return land_bitmap;
         }
 
@@ -827,21 +836,21 @@ namespace OpenSim.Region.CoreModules.World.Land
         /// <returns></returns>
         public bool[,] MergeLandBitmaps(bool[,] bitmap_base, bool[,] bitmap_add)
         {
-            if (bitmap_base.GetLength(0) != 64 || bitmap_base.GetLength(1) != 64 || bitmap_base.Rank != 2)
+            if (bitmap_base.GetLength(0) != bitmap_add.GetLength(0)
+                    || bitmap_base.GetLength(1) != bitmap_add.GetLength(1)
+                    || bitmap_add.Rank != 2
+                    || bitmap_base.Rank != 2)
             {
-                //Throw an exception - The bitmap is not 64x64
-                throw new Exception("Error: Invalid Parcel Bitmap - Bitmap_base in mergeLandBitmaps");
-            }
-            if (bitmap_add.GetLength(0) != 64 || bitmap_add.GetLength(1) != 64 || bitmap_add.Rank != 2)
-            {
-                //Throw an exception - The bitmap is not 64x64
-                throw new Exception("Error: Invalid Parcel Bitmap - Bitmap_add in mergeLandBitmaps");
+                throw new Exception(
+                    String.Format("{0} MergeLandBitmaps. merging maps not same size. baseSizeXY=<{1},{2}>, addSizeXY=<{3},{4}>",
+                                LogHeader, bitmap_base.GetLength(0), bitmap_base.GetLength(1), bitmap_add.GetLength(0), bitmap_add.GetLength(1))
+                );
             }
 
             int x, y;
-            for (y = 0; y < 64; y++)
+            for (y = 0; y < bitmap_base.GetLength(1); y++)
             {
-                for (x = 0; x < 64; x++)
+                for (x = 0; x < bitmap_add.GetLength(0); x++)
                 {
                     if (bitmap_add[x, y])
                     {
@@ -858,13 +867,13 @@ namespace OpenSim.Region.CoreModules.World.Land
         /// <returns></returns>
         private byte[] ConvertLandBitmapToBytes()
         {
-            byte[] tempConvertArr = new byte[512];
+            byte[] tempConvertArr = new byte[LandBitmap.GetLength(0) * LandBitmap.GetLength(1) / 8];
             byte tempByte = 0;
-            int x, y, i, byteNum = 0;
-            i = 0;
-            for (y = 0; y < 64; y++)
+            int byteNum = 0;
+            int i = 0;
+            for (int y = 0; y < LandBitmap.GetLength(1); y++)
             {
-                for (x = 0; x < 64; x++)
+                for (int x = 0; x < LandBitmap.GetLength(0); x++)
                 {
                     tempByte = Convert.ToByte(tempByte | Convert.ToByte(LandBitmap[x, y]) << (i++ % 8));
                     if (i % 8 == 0)
@@ -876,30 +885,52 @@ namespace OpenSim.Region.CoreModules.World.Land
                     }
                 }
             }
+            // m_log.DebugFormat("{0} ConvertLandBitmapToBytes. BitmapSize=<{1},{2}>",
+            //                         LogHeader, LandBitmap.GetLength(0), LandBitmap.GetLength(1));
             return tempConvertArr;
         }
 
         private bool[,] ConvertBytesToLandBitmap()
         {
-            bool[,] tempConvertMap = new bool[landArrayMax, landArrayMax];
+            bool[,] tempConvertMap = new bool[m_scene.RegionInfo.RegionSizeX / landUnit, m_scene.RegionInfo.RegionSizeY / landUnit];
             tempConvertMap.Initialize();
             byte tempByte = 0;
-            int x = 0, y = 0, i = 0, bitNum = 0;
-            for (i = 0; i < 512; i++)
+            // Math.Min overcomes an old bug that might have made it into the database. Only use the bytes that fit into convertMap.
+            int bitmapLen = Math.Min(LandData.Bitmap.Length, tempConvertMap.GetLength(0) * tempConvertMap.GetLength(1) / 8);
+            int xLen = (int)(m_scene.RegionInfo.RegionSizeX / landUnit);
+
+            if (bitmapLen == 512)
+            {
+                // Legacy bitmap being passed in. Use the legacy region size
+                //    and only set the lower area of the larger region.
+                xLen = (int)(Constants.RegionSize / landUnit);
+            }
+            // m_log.DebugFormat("{0} ConvertBytesToLandBitmap: bitmapLen={1}, xLen={2}", LogHeader, bitmapLen, xLen);
+
+            int x = 0, y = 0;
+            for (int i = 0; i < bitmapLen; i++)
             {
                 tempByte = LandData.Bitmap[i];
-                for (bitNum = 0; bitNum < 8; bitNum++)
+                for (int bitNum = 0; bitNum < 8; bitNum++)
                 {
                     bool bit = Convert.ToBoolean(Convert.ToByte(tempByte >> bitNum) & (byte) 1);
-                    tempConvertMap[x, y] = bit;
+                    try
+                    {
+                        tempConvertMap[x, y] = bit;
+                    }
+                    catch (Exception e)
+                    {
+                        m_log.DebugFormat("{0} ConvertBytestoLandBitmap: i={1}, x={2}, y={3}", LogHeader, i, x, y);
+                    }
                     x++;
-                    if (x > 63)
+                    if (x >= xLen)
                     {
                         x = 0;
                         y++;
                     }
                 }
             }
+
             return tempConvertMap;
         }
 
@@ -1058,7 +1089,7 @@ namespace OpenSim.Region.CoreModules.World.Land
                 {
                     foreach (SceneObjectGroup obj in primsOverMe)
                     {
-                        if (obj.OwnerID == m_landData.OwnerID)
+                        if (obj.OwnerID == LandData.OwnerID)
                         {
                             if (!returns.ContainsKey(obj.OwnerID))
                                 returns[obj.OwnerID] =
@@ -1067,11 +1098,11 @@ namespace OpenSim.Region.CoreModules.World.Land
                         }
                     }
                 }
-                else if (type == (uint)ObjectReturnType.Group && m_landData.GroupID != UUID.Zero)
+                else if (type == (uint)ObjectReturnType.Group && LandData.GroupID != UUID.Zero)
                 {
                     foreach (SceneObjectGroup obj in primsOverMe)
                     {
-                        if (obj.GroupID == m_landData.GroupID)
+                        if (obj.GroupID == LandData.GroupID)
                         {
                             if (!returns.ContainsKey(obj.OwnerID))
                                 returns[obj.OwnerID] =
@@ -1084,9 +1115,9 @@ namespace OpenSim.Region.CoreModules.World.Land
                 {
                     foreach (SceneObjectGroup obj in primsOverMe)
                     {
-                        if (obj.OwnerID != m_landData.OwnerID &&
-                            (obj.GroupID != m_landData.GroupID ||
-                            m_landData.GroupID == UUID.Zero))
+                        if (obj.OwnerID != LandData.OwnerID &&
+                            (obj.GroupID != LandData.GroupID ||
+                            LandData.GroupID == UUID.Zero))
                         {
                             if (!returns.ContainsKey(obj.OwnerID))
                                 returns[obj.OwnerID] =

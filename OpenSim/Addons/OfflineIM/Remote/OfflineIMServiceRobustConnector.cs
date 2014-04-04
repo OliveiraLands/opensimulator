@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) Contributors, http://opensimulator.org/
  * See CONTRIBUTORS.TXT for a full list of copyright holders.
  *
@@ -96,19 +96,20 @@ namespace OpenSim.OfflineIM
                 string method = request["METHOD"].ToString();
                 request.Remove("METHOD");
 
-                m_log.DebugFormat("[OfflineIM.V2.Handler]: {0}", method);
                 switch (method)
                 {
                     case "GET":
                         return HandleGet(request);
                     case "STORE":
                         return HandleStore(request);
+                    case "DELETE":
+                        return HandleDelete(request);
                 }
                 m_log.DebugFormat("[OFFLINE IM HANDLER]: unknown method request: {0}", method);
             }
             catch (Exception e)
             {
-                m_log.DebugFormat("[OFFLINE IM HANDLER]: Exception {0}", e.StackTrace);
+                m_log.Error(string.Format("[OFFLINE IM HANDLER]: Exception {0} ", e.Message), e);
             }
 
             return FailureResult();
@@ -157,6 +158,21 @@ namespace OpenSim.OfflineIM
 
             //m_log.DebugFormat("[XXX]: resp string: {0}", xmlString);
             return Util.UTF8NoBomEncoding.GetBytes(xmlString);
+        }
+
+        byte[] HandleDelete(Dictionary<string, object> request)
+        {
+            if (!request.ContainsKey("UserID"))
+            {
+                return FailureResult();
+            }
+            else
+            {
+                UUID userID = new UUID(request["UserID"].ToString());
+                m_OfflineIMService.DeleteMessages(userID);
+
+                return SuccessResult();
+            }
         }
 
         #region Helpers

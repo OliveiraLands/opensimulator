@@ -128,6 +128,7 @@ public static class BSParam
     public static float AvatarAlwaysRunFactor { get; private set; }
     public static float AvatarDensity { get; private set; }
     public static float AvatarRestitution { get; private set; }
+    public static int AvatarShape { get; private set; }
     public static float AvatarCapsuleWidth { get; private set; }
     public static float AvatarCapsuleDepth { get; private set; }
     public static float AvatarCapsuleHeight { get; private set; }
@@ -147,6 +148,8 @@ public static class BSParam
     // Vehicle parameters
     public static float VehicleMaxLinearVelocity { get; private set; }
     public static float VehicleMaxLinearVelocitySquared { get; private set; }
+    public static float VehicleMinLinearVelocity { get; private set; }
+    public static float VehicleMinLinearVelocitySquared { get; private set; }
     public static float VehicleMaxAngularVelocity { get; private set; }
     public static float VehicleMaxAngularVelocitySq { get; private set; }
     public static float VehicleAngularDamping { get; private set; }
@@ -538,7 +541,7 @@ public static class BSParam
             (s,o) => { s.PE.SetContactProcessingThreshold(o.PhysBody, ContactProcessingThreshold); } ),
 
 	    new ParameterDefn<float>("TerrainImplementation", "Type of shape to use for terrain (0=heightmap, 1=mesh)",
-            (float)BSTerrainPhys.TerrainImplementation.Mesh ),
+            (float)BSTerrainPhys.TerrainImplementation.Heightmap ),
         new ParameterDefn<int>("TerrainMeshMagnification", "Number of times the 256x256 heightmap is multiplied to create the terrain mesh" ,
             2 ),
         new ParameterDefn<float>("TerrainFriction", "Factor to reduce movement against terrain surface" ,
@@ -563,6 +566,8 @@ public static class BSParam
             3500f) ,    // 3.5 * 100
         new ParameterDefn<float>("AvatarRestitution", "Bouncyness. Changed on avatar recreation.",
             0f ),
+        new ParameterDefn<int>("AvatarShape", "Code for avatar physical shape: 0:capsule, 1:cube, 2:ovoid, 2:mesh",
+            BSShapeCollection.AvatarShapeCube ) ,
         new ParameterDefn<float>("AvatarCapsuleWidth", "The distance between the sides of the avatar capsule",
             0.6f ) ,
         new ParameterDefn<float>("AvatarCapsuleDepth", "The distance between the front and back of the avatar capsule",
@@ -570,11 +575,11 @@ public static class BSParam
         new ParameterDefn<float>("AvatarCapsuleHeight", "Default height of space around avatar",
             1.5f ),
         new ParameterDefn<float>("AvatarHeightLowFudge", "A fudge factor to make small avatars stand on the ground",
-            -0.2f ),
+            0f ),
         new ParameterDefn<float>("AvatarHeightMidFudge", "A fudge distance to adjust average sized avatars to be standing on ground",
-            0.1f ),
+            -0.1f ),
         new ParameterDefn<float>("AvatarHeightHighFudge", "A fudge factor to make tall avatars stand on the ground",
-            0.1f ),
+            0f ),
 	    new ParameterDefn<float>("AvatarContactProcessingThreshold", "Distance from capsule to check for collisions",
             0.1f ),
 	    new ParameterDefn<float>("AvatarStopZeroThreshold", "Movement velocity below which avatar is assumed to be stopped",
@@ -598,6 +603,10 @@ public static class BSParam
             1000.0f,
             (s) => { return (float)VehicleMaxLinearVelocity; },
             (s,v) => { VehicleMaxLinearVelocity = v; VehicleMaxLinearVelocitySquared = v * v; } ),
+        new ParameterDefn<float>("VehicleMinLinearVelocity", "Maximum velocity magnitude that can be assigned to a vehicle",
+            0.001f,
+            (s) => { return (float)VehicleMinLinearVelocity; },
+            (s,v) => { VehicleMinLinearVelocity = v; VehicleMinLinearVelocitySquared = v * v; } ),
         new ParameterDefn<float>("VehicleMaxAngularVelocity", "Maximum rotational velocity magnitude that can be assigned to a vehicle",
             12.0f,
             (s) => { return (float)VehicleMaxAngularVelocity; },

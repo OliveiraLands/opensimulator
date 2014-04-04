@@ -69,7 +69,7 @@ namespace OpenSim.Services.Connectors
         public virtual GridRegion HelloNeighbour(ulong regionHandle, RegionInfo thisRegion)
         {
             uint x = 0, y = 0;
-            Utils.LongToUInts(regionHandle, out x, out y);
+            Util.RegionHandleToWorldLoc(regionHandle, out x, out y);
             GridRegion regInfo = m_GridService.GetRegionByPosition(thisRegion.ScopeID, (int)x, (int)y);
             if ((regInfo != null) &&
                 // Don't remote-call this instance; that's a startup hickup
@@ -97,9 +97,9 @@ namespace OpenSim.Services.Connectors
             }
             catch (Exception e)
             {
-                m_log.WarnFormat(
-                    "[NEIGHBOUR SERVICES CONNECTOR]: Unable to parse uri {0} to send HelloNeighbour from {1} to {2}.  Exception {3}{4}",
-                    uri, thisRegion.RegionName, region.RegionName, e.Message, e.StackTrace);
+                m_log.Warn(string.Format(
+                    "[NEIGHBOUR SERVICES CONNECTOR]: Unable to parse uri {0} to send HelloNeighbour from {1} to {2}.  Exception {3} ",
+                    uri, thisRegion.RegionName, region.RegionName, e.Message), e);
 
                 return false;
             }
@@ -116,9 +116,9 @@ namespace OpenSim.Services.Connectors
             }
             catch (Exception e)
             {
-                m_log.WarnFormat(
-                    "[NEIGHBOUR SERVICES CONNECTOR]: PackRegionInfoData failed for HelloNeighbour from {0} to {1}.  Exception {2}{3}",
-                    thisRegion.RegionName, region.RegionName, e.Message, e.StackTrace);
+                m_log.Warn(string.Format(
+                    "[NEIGHBOUR SERVICES CONNECTOR]: PackRegionInfoData failed for HelloNeighbour from {0} to {1}.  Exception {2} ",
+                    thisRegion.RegionName, region.RegionName, e.Message), e);
 
                 return false;
             }
@@ -136,9 +136,9 @@ namespace OpenSim.Services.Connectors
             }
             catch (Exception e)
             {
-                m_log.WarnFormat(
-                    "[NEIGHBOUR SERVICES CONNECTOR]: Exception thrown on serialization of HelloNeighbour from {0} to {1}.  Exception {2}{3}",
-                    thisRegion.RegionName, region.RegionName, e.Message, e.StackTrace);
+                m_log.Warn(string.Format(
+                    "[NEIGHBOUR SERVICES CONNECTOR]: Exception thrown on serialization of HelloNeighbour from {0} to {1}.  Exception {2} ",
+                    thisRegion.RegionName, region.RegionName, e.Message), e);
 
                 return false;
             }
@@ -153,16 +153,16 @@ namespace OpenSim.Services.Connectors
             }
             catch (Exception e)
             {
-                m_log.WarnFormat(
-                    "[NEIGHBOUR SERVICES CONNECTOR]: Unable to send HelloNeighbour from {0} to {1}.  Exception {2}{3}",
-                    thisRegion.RegionName, region.RegionName, e.Message, e.StackTrace);
+                m_log.Warn(string.Format(
+                    "[NEIGHBOUR SERVICES CONNECTOR]: Unable to send HelloNeighbour from {0} to {1} (uri {2}).  Exception {3} ",
+                    thisRegion.RegionName, region.RegionName, uri, e.Message), e);
 
                 return false;
             }
             finally
             {
                 if (os != null)
-                    os.Close();
+                    os.Dispose();
             }
 
             // Let's wait for the response
@@ -192,9 +192,9 @@ namespace OpenSim.Services.Connectors
             }
             catch (Exception e)
             {
-                m_log.WarnFormat(
-                    "[NEIGHBOUR SERVICES CONNECTOR]: Exception on reply of DoHelloNeighbourCall from {0} back to {1}.  Exception {2}{3}",
-                    region.RegionName, thisRegion.RegionName, e.Message, e.StackTrace);
+                m_log.Warn(string.Format(
+                    "[NEIGHBOUR SERVICES CONNECTOR]: Exception on reply of DoHelloNeighbourCall from {0} back to {1}.  Exception {2} ",
+                    region.RegionName, thisRegion.RegionName, e.Message), e);
 
                 return false;
             }

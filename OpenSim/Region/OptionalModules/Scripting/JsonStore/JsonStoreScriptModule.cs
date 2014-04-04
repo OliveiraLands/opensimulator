@@ -59,7 +59,9 @@ namespace OpenSim.Region.OptionalModules.Scripting.JsonStore
 
         private IScriptModuleComms m_comms;
         private IJsonStoreModule m_store;
-        
+
+        private Dictionary<UUID,HashSet<UUID>> m_scriptStores = new Dictionary<UUID,HashSet<UUID>>();
+
 #region Region Module interface
 
         // -----------------------------------------------------------------
@@ -126,6 +128,8 @@ namespace OpenSim.Region.OptionalModules.Scripting.JsonStore
         // -----------------------------------------------------------------
         public void AddRegion(Scene scene)
         {
+            scene.EventManager.OnScriptReset += HandleScriptReset;
+            scene.EventManager.OnRemoveScript += HandleScriptReset;
         }
 
         // -----------------------------------------------------------------
@@ -134,8 +138,30 @@ namespace OpenSim.Region.OptionalModules.Scripting.JsonStore
         // -----------------------------------------------------------------
         public void RemoveRegion(Scene scene)
         {
+            scene.EventManager.OnScriptReset -= HandleScriptReset;
+            scene.EventManager.OnRemoveScript -= HandleScriptReset;
+
             // need to remove all references to the scene in the subscription
             // list to enable full garbage collection of the scene object
+        }
+
+        // -----------------------------------------------------------------
+        /// <summary>
+        /// </summary>
+        // -----------------------------------------------------------------
+        private void HandleScriptReset(uint localID, UUID itemID)
+        {
+            HashSet<UUID> stores;
+
+            lock (m_scriptStores)
+            {
+                if (! m_scriptStores.TryGetValue(itemID, out stores))
+                    return;
+                m_scriptStores.Remove(itemID);
+            }
+
+            foreach (UUID id in stores)
+                m_store.DestroyStore(id);
         }
 
         // -----------------------------------------------------------------
@@ -250,6 +276,13 @@ namespace OpenSim.Region.OptionalModules.Scripting.JsonStore
             if (! m_store.CreateStore(value, ref uuid))
                 GenerateRuntimeError("Failed to create Json store");
             
+            lock (m_scriptStores)
+            {
+                if (! m_scriptStores.ContainsKey(scriptID))
+                    m_scriptStores[scriptID] = new HashSet<UUID>();
+                
+                m_scriptStores[scriptID].Add(uuid);
+            }
             return uuid;
         }
 
@@ -261,6 +294,12 @@ namespace OpenSim.Region.OptionalModules.Scripting.JsonStore
         [ScriptInvocation]
         public int JsonDestroyStore(UUID hostID, UUID scriptID, UUID storeID)
         {
+            lock(m_scriptStores)
+            {
+                if (m_scriptStores.ContainsKey(scriptID))
+                    m_scriptStores[scriptID].Remove(storeID);
+            }
+
             return m_store.DestroyStore(storeID) ? 1 : 0;
         }
 
@@ -273,6 +312,19 @@ namespace OpenSim.Region.OptionalModules.Scripting.JsonStore
         public int JsonTestStore(UUID hostID, UUID scriptID, UUID storeID)
         {
             return m_store.TestStore(storeID) ? 1 : 0;
+        }
+
+        // -----------------------------------------------------------------
+        /// <summary>
+        /// 
+        /// </summary>
+        // -----------------------------------------------------------------
+        [ScriptInvocation]
+        public UUID JsonRezAtRoot(UUID hostID, UUID scriptID, string item, Vector3 pos, Vector3 vel, Quaternion rot, string param)
+        {
+            UUID reqID = UUID.Random();
+            Util.FireAndForget(o => DoJsonRezObject(hostID, scriptID, reqID, item, pos, vel, rot, param));
+            return reqID;
         }
 
         // -----------------------------------------------------------------
@@ -643,5 +695,103 @@ namespace OpenSim.Region.OptionalModules.Scripting.JsonStore
             return path;
         }
         
+        // -----------------------------------------------------------------
+        /// <summary>
+        /// 
+        /// </summary>
+        // -----------------------------------------------------------------
+        private void DoJsonRezObject(UUID hostID, UUID scriptID, UUID reqID, string name, Vector3 pos, Vector3 vel, Quaternion rot, string param)
+        {
+            if (Double.IsNaN(rot.X) || Double.IsNaN(rot.Y) || Double.IsNaN(rot.Z) || Double.IsNaN(rot.W))
+            {
+                GenerateRuntimeError("Invalid rez rotation");
+                return;
+            }
+
+            SceneObjectGroup host = m_scene.GetSceneObjectGroup(hostID);
+            if (host == null)
+            {
+                GenerateRuntimeError(String.Format("Unable to find rezzing host '{0}'",hostID));
+                return;
+            }
+
+            // hpos = host.RootPart.GetWorldPosition()
+            // float dist = (float)llVecDist(hpos, pos);
+            // if (dist > m_ScriptDistanceFactor * 10.0f)
+            //     return;
+
+            TaskInventoryItem item = host.RootPart.Inventory.GetInventoryItem(name);
+            if (item == null)
+            {
+                GenerateRuntimeError(String.Format("Unable to find object to rez '{0}'",name));
+                return;
+            }
+
+            if (item.InvType != (int)InventoryType.Object)
+            {
+                GenerateRuntimeError("Can't create requested object; object is missing from database");
+                return;
+            }
+
+            List<SceneObjectGroup> objlist;
+            List<Vector3> veclist;
+            
+            bool success = host.RootPart.Inventory.GetRezReadySceneObjects(item, out objlist, out veclist);
+            if (! success)
+            {
+                GenerateRuntimeError("Failed to create object");
+                return;
+            }
+
+            int totalPrims = 0;
+            foreach (SceneObjectGroup group in objlist)
+                totalPrims += group.PrimCount;
+
+            if (! m_scene.Permissions.CanRezObject(totalPrims, item.OwnerID, pos))
+            {
+                GenerateRuntimeError("Not allowed to create the object");
+                return;
+            }
+
+            if (! m_scene.Permissions.BypassPermissions())
+            {
+                if ((item.CurrentPermissions & (uint)PermissionMask.Copy) == 0)
+                    host.RootPart.Inventory.RemoveInventoryItem(item.ItemID);
+            }
+
+            for (int i = 0; i < objlist.Count; i++)
+            {
+                SceneObjectGroup group = objlist[i];
+                Vector3 curpos = pos + veclist[i];
+
+                if (group.IsAttachment == false && group.RootPart.Shape.State != 0)
+                {
+                    group.RootPart.AttachedPos = group.AbsolutePosition;
+                    group.RootPart.Shape.LastAttachPoint = (byte)group.AttachmentPoint;
+                }
+
+                group.FromPartID = host.RootPart.UUID;
+                m_scene.AddNewSceneObject(group, true, curpos, rot, vel);
+
+                UUID storeID = group.UUID;
+                if (! m_store.CreateStore(param, ref storeID))
+                {
+                    GenerateRuntimeError("Unable to create jsonstore for new object");
+                    continue;
+                }
+
+                // We can only call this after adding the scene object, since the scene object references the scene
+                // to find out if scripts should be activated at all.
+                group.RootPart.SetDieAtEdge(true);
+                group.CreateScriptInstances(0, true, m_scene.DefaultScriptEngine, 3);
+                group.ResumeScripts();
+
+                group.ScheduleGroupForFullUpdate();
+
+                // send the reply back to the host object, use the integer param to indicate the number 
+                // of remaining objects
+                m_comms.DispatchReply(scriptID, objlist.Count-i-1, group.RootPart.UUID.ToString(), reqID.ToString());
+            }
+        }
     }
 }

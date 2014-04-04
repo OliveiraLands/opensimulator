@@ -158,10 +158,27 @@ namespace OpenSim
 
         protected virtual void LoadPlugins()
         {
-            using (PluginLoader<IApplicationPlugin> loader = new PluginLoader<IApplicationPlugin>(new ApplicationPluginInitialiser(this)))
+            IConfig startupConfig = Config.Configs["Startup"];
+            string registryLocation = (startupConfig != null) ? startupConfig.GetString("RegistryLocation", String.Empty) : String.Empty;
+
+            // The location can also be specified in the environment. If there
+            // is no location in the configuration, we must call the constructor
+            // without a location parameter to allow that to happen.
+            if (registryLocation == String.Empty)
             {
-                loader.Load("/OpenSim/Startup");
-                m_plugins = loader.Plugins;
+                using (PluginLoader<IApplicationPlugin> loader = new PluginLoader<IApplicationPlugin>(new ApplicationPluginInitialiser(this)))
+                {
+                    loader.Load("/OpenSim/Startup");
+                    m_plugins = loader.Plugins;
+                }
+            }
+            else
+            {
+                using (PluginLoader<IApplicationPlugin> loader = new PluginLoader<IApplicationPlugin>(new ApplicationPluginInitialiser(this), registryLocation))
+                {
+                    loader.Load("/OpenSim/Startup");
+                    m_plugins = loader.Plugins;
+                }
             }
         }
 
@@ -690,7 +707,8 @@ namespace OpenSim
             clientServer = clientNetworkServers;
             scene.LoadWorldMap();
 
-            scene.PhysicsScene = GetPhysicsScene(scene.RegionInfo.RegionName);
+            Vector3 regionExtent = new Vector3(regionInfo.RegionSizeX, regionInfo.RegionSizeY, regionInfo.RegionSizeZ);
+            scene.PhysicsScene = GetPhysicsScene(scene.RegionInfo.RegionName, regionExtent);
             scene.PhysicsScene.RequestAssetMethod = scene.PhysicsRequestAsset;
             scene.PhysicsScene.SetTerrain(scene.Heightmap.GetFloatsSerialised());
             scene.PhysicsScene.SetWaterLevel((float) regionInfo.RegionSettings.WaterHeight);
@@ -752,10 +770,10 @@ namespace OpenSim
 
         # region Setup methods
 
-        protected override PhysicsScene GetPhysicsScene(string osSceneIdentifier)
+        protected override PhysicsScene GetPhysicsScene(string osSceneIdentifier, Vector3 regionExtent)
         {
             return GetPhysicsScene(
-                m_configSettings.PhysicsEngine, m_configSettings.MeshEngineName, Config, osSceneIdentifier);
+                m_configSettings.PhysicsEngine, m_configSettings.MeshEngineName, Config, osSceneIdentifier, regionExtent);
         }
 
         /// <summary>

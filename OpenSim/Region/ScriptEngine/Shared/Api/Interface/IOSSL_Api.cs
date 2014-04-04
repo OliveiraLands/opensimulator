@@ -294,6 +294,24 @@ namespace OpenSim.Region.ScriptEngine.Shared.Api.Interfaces
         LSL_List osGetLinkPrimitiveParams(int linknumber, LSL_List rules);
 
         /// <summary>
+        /// Identical to llCreateLink() but does not require permission from the owner.
+        /// </summary>
+        /// <param name='target'></param>
+        /// <param name='parent'></param>
+        void osForceCreateLink(string target, int parent);
+
+        /// <summary>
+        /// Identical to llBreakLink() but does not require permission from the owner.
+        /// </summary>
+        /// <param name='linknum'></param>
+        void osForceBreakLink(int linknum);
+
+        /// <summary>
+        /// Identical to llBreakAllLinks() but does not require permission from the owner.
+        /// </summary>
+        void osForceBreakAllLinks();
+
+        /// <summary>
         /// Check if the given key is an npc
         /// </summary>
         /// <param name="npc"></param>
@@ -337,6 +355,7 @@ namespace OpenSim.Region.ScriptEngine.Shared.Api.Interfaces
         key osGetMapTexture();
         key osGetRegionMapTexture(string regionName);
         LSL_List osGetRegionStats();
+        vector osGetRegionSize();
 
         int osGetSimulatorMemory();
         void osKickAvatar(string FirstName,string SurName,string alert);

@@ -45,6 +45,7 @@ using OpenSim.Framework.Servers;
 using OpenSim.Framework.Monitoring;
 using OpenSim.Region.Framework.Interfaces;
 using OpenSim.Region.Framework.Scenes;
+using OpenSim.Services.Interfaces;
 
 namespace OpenSim
 {
@@ -266,10 +267,21 @@ namespace OpenSim
                                           SavePrimsXml2);
 
             m_console.Commands.AddCommand("Archiving", false, "load oar",
-                                          "load oar [--merge] [--skip-assets] [<OAR path>]",
+                                          "load oar [--merge] [--skip-assets]"
+                                             + " [--force-terrain] [--force-parcels]"
+                                             + " [--no-objects]"
+                                             + " [--rotation degrees] [--rotation-center \"<x,y,z>\"]"
+                                             + " [--displacement \"<x,y,z>\"]"
+                                             + " [<OAR path>]",
                                           "Load a region's data from an OAR archive.",
-                                          "--merge will merge the OAR with the existing scene." + Environment.NewLine
+                                          "--merge will merge the OAR with the existing scene (suppresses terrain and parcel info loading)." + Environment.NewLine
                                           + "--skip-assets will load the OAR but ignore the assets it contains." + Environment.NewLine
+                                          + "--displacement will add this value to the position of every object loaded" + Environment.NewLine
+                                          + "--force-terrain forces the loading of terrain from the oar (undoes suppression done by --merge)" + Environment.NewLine
+                                          + "--force-parcels forces the loading of parcels from the oar (undoes suppression done by --merge)" + Environment.NewLine
+                                          + "--rotation specified rotation to be applied to the oar. Specified in degrees." + Environment.NewLine
+                                          + "--rotation-center Location (relative to original OAR) to apply rotation. Default is <128,128,0>" + Environment.NewLine
+                                          + "--no-objects suppresses the addition of any objects (good for loading only the terrain)" + Environment.NewLine
                                           + "The path can be either a filesystem location or a URI."
                                           + "  If this is not given then the command looks for an OAR named region.oar in the current directory.",
                                           LoadOar);
@@ -297,9 +309,19 @@ namespace OpenSim
                                           HandleEditScale);
 
             m_console.Commands.AddCommand("Objects", false, "rotate scene",
-                                          "rotate scene <degrees>",
-                                          "Rotates all scene objects around x:128, y:128",
+                                          "rotate scene <degrees> [centerX, centerY]",
+                                          "Rotates all scene objects around centerX, centerY (defailt 128, 128) (please back up your region before using)",
                                           HandleRotateScene);
+
+            m_console.Commands.AddCommand("Objects", false, "scale scene",
+                                          "scale scene <factor>",
+                                          "Scales the scene objects (please back up your region before using)",
+                                          HandleScaleScene);
+
+            m_console.Commands.AddCommand("Objects", false, "translate scene",
+                                          "translate scene xOffset yOffset zOffset",
+                                          "translates the scene objects (please back up your region before using)",
+                                          HandleTranslateScene);
 
             m_console.Commands.AddCommand("Users", false, "kick user",
                                           "kick user <first> <last> [--force] [message]",
@@ -378,6 +400,16 @@ namespace OpenSim
                                           "delete-region <name>",
                                           "Delete a region from disk", 
                                           RunCommand);
+
+            m_console.Commands.AddCommand("Estates", false, "estate set owner",
+                                          "estate set owner <estate-id>[ <UUID> | <Firstname> <Lastname> ]",
+                                          "Sets the owner of the specified estate to the specified UUID or user. ",
+                                          SetEstateOwnerCommand);
+
+            m_console.Commands.AddCommand("Estates", false, "estate set name",
+                                          "estate set name <estate-id> <new name>",
+                                          "Sets the name of the specified estate to the specified value. New name must be unique.",
+                                          SetEstateNameCommand);
         }
 
         protected override void ShutdownSpecific()
@@ -538,13 +570,89 @@ namespace OpenSim
             {
                 scene.ForEachSOG(delegate(SceneObjectGroup sog)
                 {
-                    if (sog.AttachmentPoint == 0)
+                    if (!sog.IsAttachment)
                     {
                         sog.RootPart.UpdateRotation(rot * sog.GroupRotation);
                         Vector3 offset = sog.AbsolutePosition - center;
                         offset *= rot;
                         sog.UpdateGroupPosition(center + offset);
                     }
+                });
+            });
+        }
+
+        private void HandleScaleScene(string module, string[] args)
+        {
+            string usage = "Usage: scale scene <factor>";
+
+            if (args.Length < 3)
+            {
+                MainConsole.Instance.Output(usage);
+                return;
+            }
+
+            float factor = (float)(Convert.ToSingle(args[2]));
+
+            float minZ = float.MaxValue;
+
+            SceneManager.ForEachSelectedScene(delegate(Scene scene)
+            {
+                scene.ForEachSOG(delegate(SceneObjectGroup sog)
+                {
+                    if (!sog.IsAttachment)
+                    {
+                        if (sog.RootPart.AbsolutePosition.Z < minZ)
+                            minZ = sog.RootPart.AbsolutePosition.Z;
+                    }
+                });
+            });
+
+            SceneManager.ForEachSelectedScene(delegate(Scene scene)
+            {
+                scene.ForEachSOG(delegate(SceneObjectGroup sog)
+                {
+                    if (!sog.IsAttachment)
+                    {
+                        Vector3 tmpRootPos = sog.RootPart.AbsolutePosition;
+                        tmpRootPos.Z -= minZ;
+                        tmpRootPos *= factor;
+                        tmpRootPos.Z += minZ;
+
+                        foreach (SceneObjectPart sop in sog.Parts)
+                        {
+                            if (sop.ParentID != 0)
+                                sop.OffsetPosition *= factor;
+                            sop.Scale *= factor;
+                        }
+
+                        sog.UpdateGroupPosition(tmpRootPos);
+                    }
+                });
+            });
+        }
+
+        private void HandleTranslateScene(string module, string[] args)
+        {
+            string usage = "Usage: translate scene <xOffset, yOffset, zOffset>";
+
+            if (args.Length < 5)
+            {
+                MainConsole.Instance.Output(usage);
+                return;
+            }
+
+            float xOFfset = (float)Convert.ToSingle(args[2]);
+            float yOffset = (float)Convert.ToSingle(args[3]);
+            float zOffset = (float)Convert.ToSingle(args[4]);
+
+            Vector3 offset = new Vector3(xOFfset, yOffset, zOffset);
+
+            SceneManager.ForEachSelectedScene(delegate(Scene scene)
+            {
+                scene.ForEachSOG(delegate(SceneObjectGroup sog)
+                {
+                    if (!sog.IsAttachment)
+                        sog.UpdateGroupPosition(sog.AbsolutePosition + offset);
                 });
             });
         }
@@ -819,17 +927,24 @@ namespace OpenSim
                     break;
 
                 case "regions":
+                    ConsoleDisplayTable cdt = new ConsoleDisplayTable();
+                    cdt.AddColumn("Name", ConsoleDisplayUtil.RegionNameSize);
+                    cdt.AddColumn("ID", ConsoleDisplayUtil.UuidSize);
+                    cdt.AddColumn("Position", ConsoleDisplayUtil.CoordTupleSize);
+                    cdt.AddColumn("Port", ConsoleDisplayUtil.PortSize);
+                    cdt.AddColumn("Ready?", 6);
+                    cdt.AddColumn("Estate", ConsoleDisplayUtil.EstateNameSize);
                     SceneManager.ForEachScene(
-                        delegate(Scene scene)
-                            {
-                                MainConsole.Instance.Output(String.Format(
-                                           "Region Name: {0}, Region XLoc: {1}, Region YLoc: {2}, Region Port: {3}, Estate Name: {4}",
-                                           scene.RegionInfo.RegionName,
-                                           scene.RegionInfo.RegionLocX,
-                                           scene.RegionInfo.RegionLocY,
-                                           scene.RegionInfo.InternalEndPoint.Port,
-                                           scene.RegionInfo.EstateSettings.EstateName));
-                            });
+                        scene => 
+                        { 
+                            RegionInfo ri = scene.RegionInfo; 
+                            cdt.AddRow(
+                                ri.RegionName, ri.RegionID, string.Format("{0},{1}", ri.RegionLocX, ri.RegionLocY), 
+                                ri.InternalEndPoint.Port, scene.Ready ? "Yes" : "No", ri.EstateSettings.EstateName);
+                        }
+                    );
+
+                    MainConsole.Instance.Output(cdt.ToString());
                     break;
 
                 case "ratings":
@@ -878,7 +993,7 @@ namespace OpenSim
                             aCircuit.child ? "child" : "root",
                             aCircuit.circuitcode.ToString(),
                             aCircuit.IPAddress != null ? aCircuit.IPAddress.ToString() : "not set",
-                            aCircuit.Viewer);
+                            Util.GetViewerName(aCircuit));
                 });
 
             MainConsole.Instance.Output(cdt.ToString());
@@ -1061,6 +1176,130 @@ namespace OpenSim
             SceneManager.SaveCurrentSceneToArchive(cmdparams);
         }
 
+        protected void SetEstateOwnerCommand(string module, string[] args)
+        {
+            string response = null;
+
+            Scene scene = SceneManager.CurrentOrFirstScene;
+            IEstateModule estateModule = scene.RequestModuleInterface<IEstateModule>();
+
+            if (args.Length == 3)
+            {
+                response = "No estate specified.";
+            }
+            else
+            {
+                int estateId;
+                if (!int.TryParse(args[3], out estateId))
+                {
+                    response = String.Format("\"{0}\" is not a valid ID for an Estate", args[3]);
+                }
+                else
+                {
+                    if (args.Length == 4)
+                    {
+                        response = "No user specified.";
+                    }
+                    else
+                    {
+                        UserAccount account = null;
+
+                        // TODO: Is there a better choice here?
+                        UUID scopeID = UUID.Zero;
+
+                        string s1 = args[4];
+                        if (args.Length == 5)
+                        {
+                            // attempt to get account by UUID
+                            UUID u;
+                            if (UUID.TryParse(s1, out u))
+                            {
+                                account = scene.UserAccountService.GetUserAccount(scopeID, u);
+                                if (account == null)
+                                    response = String.Format("Could not find user {0}", s1);
+                            }
+                            else
+                            {
+                                response = String.Format("Invalid UUID {0}", s1);
+                            }
+                        }
+                        else
+                        {
+                            // attempt to get account by Firstname, Lastname
+                            string s2 = args[5];
+                            account = scene.UserAccountService.GetUserAccount(scopeID, s1, s2);
+                            if (account == null)
+                                response = String.Format("Could not find user {0} {1}", s1, s2);
+                        }
+
+                        // If it's valid, send it off for processing.
+                        if (account != null)
+                            response = estateModule.SetEstateOwner(estateId, account);
+
+                        if (response == String.Empty)
+                        {
+                            response = String.Format("Estate owner changed to {0} ({1} {2})", account.PrincipalID, account.FirstName, account.LastName);
+                        }
+                    }
+                }
+            }
+
+            // give the user some feedback
+            if (response != null)
+                MainConsole.Instance.Output(response);
+        }
+
+        protected void SetEstateNameCommand(string module, string[] args)
+        {
+            string response = null;
+
+            Scene scene = SceneManager.CurrentOrFirstScene;
+            IEstateModule estateModule = scene.RequestModuleInterface<IEstateModule>();
+
+            if (args.Length == 3)
+            {
+                response = "No estate specified.";
+            }
+            else
+            {
+                int estateId;
+                if (!int.TryParse(args[3], out estateId))
+                {
+                    response = String.Format("\"{0}\" is not a valid ID for an Estate", args[3]);
+                }
+                else
+                {
+                    if (args.Length == 4)
+                    {
+                        response = "No name specified.";
+                    }
+                    else
+                    {
+                        // everything after the estate ID is "name"
+                        StringBuilder sb = new StringBuilder(args[4]);
+                        for (int i = 5; i < args.Length; i++)
+                            sb.Append (" " + args[i]);
+
+                        string estateName = sb.ToString();
+
+                        // send it off for processing.
+                        response = estateModule.SetEstateName(estateId, estateName);
+
+                        if (response == String.Empty)
+                        {
+                            response = String.Format("Estate {0} renamed to \"{1}\"", estateId, estateName);
+                        }
+                    }
+                }
+            }
+
+            // give the user some feedback
+            if (response != null)
+                MainConsole.Instance.Output(response);
+        }
+
+        #endregion
+
         private static string CombineParams(string[] commandParams, int pos)
         {
             string result = String.Empty;
@@ -1071,7 +1310,5 @@ namespace OpenSim
             result = result.TrimEnd(' ');
             return result;
         }
-
-        #endregion
     }
 }

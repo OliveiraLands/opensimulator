@@ -26,8 +26,9 @@
  */
 
 using System;
-using System.Reflection;
 using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
 using log4net;
 using Mono.Addins;
 using Nini.Config;
@@ -57,12 +58,10 @@ namespace OpenSim.Region.OptionalModules
         
         public void Initialise(IConfigSource config)
         {
-            //IConfig myConfig = config.Configs["Startup"];
-
             string permissionModules = Util.GetConfigVarFromSections<string>(config, "permissionmodules",
                 new string[] { "Startup", "Permissions" }, "DefaultPermissionsModule"); 
 
-            List<string> modules=new List<string>(permissionModules.Split(','));
+            List<string> modules = new List<string>(permissionModules.Split(',').Select(m => m.Trim()));
 
             if(!modules.Contains("PrimLimitsModule"))
                 return;
@@ -128,8 +127,10 @@ namespace OpenSim.Region.OptionalModules
             ILandObject oldParcel = scene.LandChannel.GetLandObject(oldPoint.X, oldPoint.Y);
             ILandObject newParcel = scene.LandChannel.GetLandObject(newPoint.X, newPoint.Y);
 
-            int usedPrims = newParcel.PrimCounts.Total;
-            int simulatorCapacity = newParcel.GetSimulatorMaxPrimCount();
+            // newParcel will be null only if it outside of our current region.  If this is the case, then the 
+            // receiving permissions will perform the check.
+            if (newParcel == null)
+                return true;
             
             // The prim hasn't crossed a region boundry so we don't need to worry
             // about prim counts here
@@ -146,8 +147,11 @@ namespace OpenSim.Region.OptionalModules
             }
 
             // TODO: Add Special Case here for temporary prims
+
+            int usedPrims = newParcel.PrimCounts.Total;
+            int simulatorCapacity = newParcel.GetSimulatorMaxPrimCount();
             
-            if(objectCount + usedPrims > simulatorCapacity)
+            if (objectCount + usedPrims > simulatorCapacity)
             {
                 m_dialogModule.SendAlertToUser(obj.OwnerID, "Unable to move object because the destination parcel  is too full");
                 return false;

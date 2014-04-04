@@ -178,7 +178,7 @@ namespace OpenSim.Region.CoreModules.World.Archiver
 
                 // Archive the regions
 
-                Dictionary<UUID, AssetType> assetUuids = new Dictionary<UUID, AssetType>();
+                Dictionary<UUID, sbyte> assetUuids = new Dictionary<UUID, sbyte>();
 
                 scenesGroup.ForEachScene(delegate(Scene scene)
                 {
@@ -199,7 +199,7 @@ namespace OpenSim.Region.CoreModules.World.Archiver
                             m_rootScene.AssetService, m_rootScene.UserAccountService,
                             m_rootScene.RegionInfo.ScopeID, options, ReceivedAllAssets);
 
-                    Util.FireAndForget(o => ar.Execute());
+                    Util.RunThreadNoTimeout(o => ar.Execute(), "AssetsRequest", null);
 
                     // CloseArchive() will be called from ReceivedAllAssets()
                 }
@@ -216,7 +216,7 @@ namespace OpenSim.Region.CoreModules.World.Archiver
             }
         }
 
-        private void ArchiveOneRegion(Scene scene, string regionDir, Dictionary<UUID, AssetType> assetUuids)
+        private void ArchiveOneRegion(Scene scene, string regionDir, Dictionary<UUID, sbyte> assetUuids)
         {
             m_log.InfoFormat("[ARCHIVER]: Writing region {0}", scene.RegionInfo.RegionName);
 
@@ -276,16 +276,16 @@ namespace OpenSim.Region.CoreModules.World.Archiver
             RegionSettings regionSettings = scene.RegionInfo.RegionSettings;
     
             if (regionSettings.TerrainTexture1 != RegionSettings.DEFAULT_TERRAIN_TEXTURE_1)
-                assetUuids[regionSettings.TerrainTexture1] = AssetType.Texture;
+                assetUuids[regionSettings.TerrainTexture1] = (sbyte)AssetType.Texture;
                 
             if (regionSettings.TerrainTexture2 != RegionSettings.DEFAULT_TERRAIN_TEXTURE_2)
-                assetUuids[regionSettings.TerrainTexture2] = AssetType.Texture;
+                assetUuids[regionSettings.TerrainTexture2] = (sbyte)AssetType.Texture;
                 
             if (regionSettings.TerrainTexture3 != RegionSettings.DEFAULT_TERRAIN_TEXTURE_3)
-                assetUuids[regionSettings.TerrainTexture3] = AssetType.Texture;
+                assetUuids[regionSettings.TerrainTexture3] = (sbyte)AssetType.Texture;
                 
             if (regionSettings.TerrainTexture4 != RegionSettings.DEFAULT_TERRAIN_TEXTURE_4)
-                assetUuids[regionSettings.TerrainTexture4] = AssetType.Texture;
+                assetUuids[regionSettings.TerrainTexture4] = (sbyte)AssetType.Texture;
 
             Save(scene, sceneObjects, regionDir);
         }
@@ -533,7 +533,7 @@ namespace OpenSim.Region.CoreModules.World.Archiver
             if (isMegaregion)
                 size = rcMod.GetSizeOfMegaregion(scene.RegionInfo.RegionID);
             else
-                size = new Vector2((float)Constants.RegionSize, (float)Constants.RegionSize);
+                size = new Vector2((float)scene.RegionInfo.RegionSizeX, (float)scene.RegionInfo.RegionSizeY);
     
             xtw.WriteElementString("is_megaregion", isMegaregion.ToString());
             xtw.WriteElementString("size_in_meters", string.Format("{0},{1}", size.X, size.Y));

@@ -92,7 +92,7 @@ namespace OpenSim.Region.Framework.Scenes
             {
                 m_log.DebugFormat(
                     "[SCENE COMMUNICATION SERVICE]: Region {0} successfully informed neighbour {1} at {2}-{3} that it is up",
-                    m_scene.Name, neighbour.RegionName, x / Constants.RegionSize, y / Constants.RegionSize);
+                    m_scene.Name, neighbour.RegionName, Util.WorldToRegionLoc(x), Util.WorldToRegionLoc(y));
 
                 m_scene.EventManager.TriggerOnRegionUp(neighbour);
             }
@@ -100,7 +100,7 @@ namespace OpenSim.Region.Framework.Scenes
             {
                 m_log.WarnFormat(
                     "[SCENE COMMUNICATION SERVICE]: Region {0} failed to inform neighbour at {1}-{2} that it is up.",
-                    m_scene.Name, x / Constants.RegionSize, y / Constants.RegionSize);
+                    m_scene.Name, Util.WorldToRegionLoc(x), Util.WorldToRegionLoc(y));
             }
         }
 
@@ -166,7 +166,7 @@ namespace OpenSim.Region.Framework.Scenes
                         // we only want to send one update to each simulator; the simulator will
                         // hand it off to the regions where a child agent exists, this does assume
                         // that the region position is cached or performance will degrade
-                        Utils.LongToUInts(regionHandle, out x, out y);
+                        Util.RegionHandleToWorldLoc(regionHandle, out x, out y);
                         GridRegion dest = m_scene.GridService.GetRegionByPosition(UUID.Zero, (int)x, (int)y);
                         if (dest == null)
                             continue;
@@ -203,7 +203,7 @@ namespace OpenSim.Region.Framework.Scenes
 
             //m_commsProvider.InterRegion.TellRegionToCloseChildConnection(regionHandle, agentID);
             uint x = 0, y = 0;
-            Utils.LongToUInts(regionHandle, out x, out y);
+            Util.RegionHandleToWorldLoc(regionHandle, out x, out y);
 
             GridRegion destination = m_scene.GridService.GetRegionByPosition(m_regionInfo.ScopeID, (int)x, (int)y);
 

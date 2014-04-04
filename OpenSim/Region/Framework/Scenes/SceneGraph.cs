@@ -772,7 +772,8 @@ namespace OpenSim.Region.Framework.Scenes
             List<ScenePresence> presences = GetScenePresences();
             foreach (ScenePresence presence in presences)
             {
-                if (presence.Firstname == firstName && presence.Lastname == lastName)
+                if (string.Equals(presence.Firstname, firstName, StringComparison.CurrentCultureIgnoreCase)
+                    && string.Equals(presence.Lastname, lastName, StringComparison.CurrentCultureIgnoreCase))
                     return presence;
             }
             return null;
@@ -1326,12 +1327,23 @@ namespace OpenSim.Region.Framework.Scenes
         /// <summary>
         /// Update the position of the given group.
         /// </summary>
-        /// <param name="localID"></param>
+        /// <param name="localId"></param>
         /// <param name="pos"></param>
         /// <param name="remoteClient"></param>
-        public void UpdatePrimGroupPosition(uint localID, Vector3 pos, IClientAPI remoteClient)
+        public void UpdatePrimGroupPosition(uint localId, Vector3 pos, IClientAPI remoteClient)
         {
-            SceneObjectGroup group = GetGroupByPrim(localID);
+            UpdatePrimGroupPosition(localId, pos, remoteClient.AgentId);
+        }
+
+        /// <summary>
+        /// Update the position of the given group.
+        /// </summary>
+        /// <param name="localId"></param>
+        /// <param name="pos"></param>
+        /// <param name="updatingAgentId"></param>
+        public void UpdatePrimGroupPosition(uint localId, Vector3 pos, UUID updatingAgentId)
+        {
+            SceneObjectGroup group = GetGroupByPrim(localId);
             
             if (group != null)
             {
@@ -1342,7 +1354,7 @@ namespace OpenSim.Region.Framework.Scenes
                 }
                 else
                 {
-                    if (m_parentScene.Permissions.CanMoveObject(group.UUID, remoteClient.AgentId) 
+                    if (m_parentScene.Permissions.CanMoveObject(group.UUID, updatingAgentId) 
                         && m_parentScene.Permissions.CanObjectEntry(group.UUID, false, pos))
                     {
                         group.UpdateGroupPosition(pos);

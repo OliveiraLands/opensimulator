@@ -1022,7 +1022,7 @@ namespace OpenSim.ApplicationPlugins.RemoteController
                     // Set home position
 
                     GridRegion home = scene.GridService.GetRegionByPosition(scopeID, 
-                        (int)(regionXLocation * Constants.RegionSize), (int)(regionYLocation * Constants.RegionSize));
+                                        (int)Util.RegionToWorldLoc(regionXLocation), (int)Util.RegionToWorldLoc(regionYLocation));
                     if (null == home)
                     {
                         m_log.WarnFormat("[RADMIN]: Unable to set home region for newly created user account {0} {1}", firstName, lastName);
@@ -1252,7 +1252,7 @@ namespace OpenSim.ApplicationPlugins.RemoteController
                     if ((null != regionXLocation) && (null != regionYLocation))
                     {
                         GridRegion home = scene.GridService.GetRegionByPosition(scopeID, 
-                            (int)(regionXLocation * Constants.RegionSize), (int)(regionYLocation * Constants.RegionSize));
+                                        (int)Util.RegionToWorldLoc((uint)regionXLocation), (int)Util.RegionToWorldLoc((uint)regionYLocation));
                         if (null == home) {
                             m_log.WarnFormat("[RADMIN]: Unable to set home region for updated user account {0} {1}", firstName, lastName);
                         } else {
@@ -1484,8 +1484,11 @@ namespace OpenSim.ApplicationPlugins.RemoteController
                     }
 
                     IRegionArchiverModule archiver = scene.RequestModuleInterface<IRegionArchiverModule>();
+                    Dictionary<string, object> archiveOptions = new Dictionary<string,object>();
+                    if (mergeOar) archiveOptions.Add("merge", null);
+                    if (skipAssets) archiveOptions.Add("skipAssets", null);
                     if (archiver != null)
-                        archiver.DearchiveRegion(filename, mergeOar, skipAssets, Guid.Empty);
+                        archiver.DearchiveRegion(filename, Guid.Empty, archiveOptions);
                     else
                         throw new Exception("Archiver module not present for scene");
 
@@ -2763,15 +2766,13 @@ namespace OpenSim.ApplicationPlugins.RemoteController
         /// </summary>
         private void ApplyNextOwnerPermissions(InventoryItemBase item)
         {
-            if (item.InvType == (int)InventoryType.Object && (item.CurrentPermissions & 7) != 0)
+            if (item.InvType == (int)InventoryType.Object)
             {
-                if ((item.CurrentPermissions & ((uint)PermissionMask.Copy >> 13)) == 0)
-                    item.CurrentPermissions &= ~(uint)PermissionMask.Copy;
-                if ((item.CurrentPermissions & ((uint)PermissionMask.Transfer >> 13)) == 0)
-                    item.CurrentPermissions &= ~(uint)PermissionMask.Transfer;
-                if ((item.CurrentPermissions & ((uint)PermissionMask.Modify >> 13)) == 0)
-                    item.CurrentPermissions &= ~(uint)PermissionMask.Modify;
+                uint perms = item.CurrentPermissions;
+                PermissionsUtil.ApplyFoldedPermissions(item.CurrentPermissions, ref perms);
+                item.CurrentPermissions = perms;
             }
+
             item.CurrentPermissions &= item.NextPermissions;
             item.BasePermissions &= item.NextPermissions;
             item.EveryOnePermissions &= item.NextPermissions;
@@ -2883,7 +2884,7 @@ namespace OpenSim.ApplicationPlugins.RemoteController
                             // Set home position
 
                             GridRegion home = scene.GridService.GetRegionByPosition(scopeID, 
-                                (int)(regionXLocation * Constants.RegionSize), (int)(regionYLocation * Constants.RegionSize));
+                                        (int)Util.RegionToWorldLoc(regionXLocation), (int)Util.RegionToWorldLoc(regionYLocation));
                             if (null == home) {
                                 m_log.WarnFormat("[RADMIN]: Unable to set home region for newly created user account {0} {1}", names[0], names[1]);
                             } else {

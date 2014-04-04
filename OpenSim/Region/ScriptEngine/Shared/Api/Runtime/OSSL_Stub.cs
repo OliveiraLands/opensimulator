@@ -542,6 +542,21 @@ namespace OpenSim.Region.ScriptEngine.Shared.ScriptBase
             return m_OSSL_Functions.osGetLinkPrimitiveParams(linknumber, rules);
         }
 
+        public void osForceCreateLink(string target, int parent)
+        {
+            m_OSSL_Functions.osForceCreateLink(target, parent);
+        }
+
+        public void osForceBreakLink(int linknum)
+        {
+            m_OSSL_Functions.osForceBreakLink(linknum);
+        }
+
+        public void osForceBreakAllLinks()
+        {
+            m_OSSL_Functions.osForceBreakAllLinks();
+        }
+
         public LSL_Integer osIsNpc(LSL_Key npc)
         {
             return m_OSSL_Functions.osIsNpc(npc);
@@ -713,16 +728,18 @@ namespace OpenSim.Region.ScriptEngine.Shared.ScriptBase
             }
             private void Save()
             {
+                /* Remove temporarily until we have a handle to the region size
                 if (Position.x > ((int)Constants.RegionSize - 1))
                     Position.x = ((int)Constants.RegionSize - 1);
-                if (Position.x < 0)
-                    Position.x = 0;
                 if (Position.y > ((int)Constants.RegionSize - 1))
                     Position.y = ((int)Constants.RegionSize - 1);
+                 */
+                if (Position.z > Constants.RegionHeight)
+                    Position.z = Constants.RegionHeight;
+                if (Position.x < 0)
+                    Position.x = 0;
                 if (Position.y < 0)
                     Position.y = 0;
-                if (Position.z > 768)
-                    Position.z = 768;
                 if (Position.z < 0)
                     Position.z = 0;
                 prim.OSSL.llSetPos(Position);
@@ -861,6 +878,11 @@ namespace OpenSim.Region.ScriptEngine.Shared.ScriptBase
         public LSL_List osGetRegionStats()
         {
             return m_OSSL_Functions.osGetRegionStats();
+        }
+
+        public vector osGetRegionSize()
+        {
+            return m_OSSL_Functions.osGetRegionSize();
         }
 
         /// <summary>

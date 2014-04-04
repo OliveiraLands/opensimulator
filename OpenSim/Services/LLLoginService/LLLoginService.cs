@@ -50,12 +50,15 @@ namespace OpenSim.Services.LLLoginService
     public class LLLoginService : ILoginService
     {
         private static readonly ILog m_log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly string LogHeader = "[LLOGIN SERVICE]";
+
         private static bool Initialized = false;
 
         protected IUserAccountService m_UserAccountService;
         protected IGridUserService m_GridUserService;
         protected IAuthenticationService m_AuthenticationService;
         protected IInventoryService m_InventoryService;
+        protected IInventoryService m_HGInventoryService;
         protected IGridService m_GridService;
         protected IPresenceService m_PresenceService;
         protected ISimulationService m_LocalSimulationService;
@@ -162,6 +165,15 @@ namespace OpenSim.Services.LLLoginService
                 m_RemoteSimulationService = ServerUtils.LoadPlugin<ISimulationService>(simulationService, args);
             if (agentService != string.Empty)
                 m_UserAgentService = ServerUtils.LoadPlugin<IUserAgentService>(agentService, args);
+
+            // Get the Hypergrid inventory service (exists only if Hypergrid is enabled)
+            string hgInvServicePlugin = m_LoginServerConfig.GetString("HGInventoryServicePlugin", String.Empty);
+            if (hgInvServicePlugin != string.Empty)
+            {
+                string hgInvServiceArg = m_LoginServerConfig.GetString("HGInventoryServiceConstructorArg", String.Empty);
+                Object[] args2 = new Object[] { config, hgInvServiceArg };
+                m_HGInventoryService = ServerUtils.LoadPlugin<IInventoryService>(hgInvServicePlugin, args2);
+            }
 
             //
             // deal with the services given as argument
@@ -348,6 +360,13 @@ namespace OpenSim.Services.LLLoginService
                     return LLFailedLoginResponse.InventoryProblem;
                 }
 
+                if (m_HGInventoryService != null)
+                {
+                    // Give the Suitcase service a chance to create the suitcase folder.
+                    // (If we're not using the Suitcase inventory service then this won't do anything.)
+                    m_HGInventoryService.GetRootFolder(account.PrincipalID);
+                }
+
                 List<InventoryFolderBase> inventorySkel = m_InventoryService.GetInventorySkeleton(account.PrincipalID);
                 if (m_RequireInventory && ((inventorySkel == null) || (inventorySkel != null && inventorySkel.Count == 0)))
                 {
@@ -382,13 +401,33 @@ namespace OpenSim.Services.LLLoginService
                 //
                 GridRegion home = null;
                 GridUserInfo guinfo = m_GridUserService.LoggedIn(account.PrincipalID.ToString());
-                if (guinfo != null && (guinfo.HomeRegionID != UUID.Zero) && m_GridService != null)
+
+                // We are only going to complain about no home if the user actually tries to login there, to avoid
+                // spamming the console.
+                if (guinfo != null)
                 {
-                    home = m_GridService.GetRegionByUUID(scopeID, guinfo.HomeRegionID);
+                    if (guinfo.HomeRegionID == UUID.Zero && startLocation == "home")
+                    {
+                        m_log.WarnFormat(
+                            "[LLOGIN SERVICE]: User {0} tried to login to a 'home' start location but they have none set",
+                            account.Name);
+                    }
+                    else if (m_GridService != null)
+                    {
+                        home = m_GridService.GetRegionByUUID(scopeID, guinfo.HomeRegionID);
+
+                        if (home == null && startLocation == "home")
+                        {
+                            m_log.WarnFormat(
+                                "[LLOGIN SERVICE]: User {0} tried to login to a 'home' start location with ID {1} but this was not found.",
+                                account.Name, guinfo.HomeRegionID);
+                        }
+                    }
                 }
-                if (guinfo == null)
+                else
                 {
                     // something went wrong, make something up, so that we don't have to test this anywhere else
+                    m_log.DebugFormat("{0} Failed to fetch GridUserInfo. Creating empty GridUserInfo as home", LogHeader);
                     guinfo = new GridUserInfo();
                     guinfo.LastPosition = guinfo.HomePosition = new Vector3(128, 128, 30);
                 }
@@ -506,10 +545,6 @@ namespace OpenSim.Services.LLLoginService
 
                 if (home == null)
                 {
-                    m_log.WarnFormat(
-                        "[LLOGIN SERVICE]: User {0} {1} tried to login to a 'home' start location but they have none set",
-                        account.FirstName, account.LastName);
-                    
                     tryDefaults = true;
                 }
                 else
@@ -681,7 +716,7 @@ namespace OpenSim.Services.LLLoginService
         private GridRegion FindAlternativeRegion(UUID scopeID)
         {
             List<GridRegion> hyperlinks = null;
-            List<GridRegion> regions = m_GridService.GetFallbackRegions(scopeID, 1000 * (int)Constants.RegionSize, 1000 * (int)Constants.RegionSize);
+            List<GridRegion> regions = m_GridService.GetFallbackRegions(scopeID, (int)Util.RegionToWorldLoc(1000), (int)Util.RegionToWorldLoc(1000));
             if (regions != null && regions.Count > 0)
             {
                 hyperlinks = m_GridService.GetHyperlinks(scopeID);
@@ -715,9 +750,10 @@ namespace OpenSim.Services.LLLoginService
             UUID regionID;
             ulong handle;
             string imageURL = string.Empty, reason = string.Empty;
+            string message;
             if (m_GatekeeperConnector.LinkRegion(gatekeeper, out regionID, out handle, out domainName, out imageURL, out reason))
             {
-                GridRegion destination = m_GatekeeperConnector.GetHyperlinkRegion(gatekeeper, regionID);
+                GridRegion destination = m_GatekeeperConnector.GetHyperlinkRegion(gatekeeper, regionID, out message);
                 return destination;
             }
 

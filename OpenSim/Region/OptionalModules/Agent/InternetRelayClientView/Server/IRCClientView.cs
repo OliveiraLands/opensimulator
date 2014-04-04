@@ -516,7 +516,7 @@ namespace OpenSim.Region.OptionalModules.Agent.InternetRelayClientView.Server
 
         public Vector3 StartPos
         {
-            get { return new Vector3(((int)Constants.RegionSize * 0.5f), ((int)Constants.RegionSize * 0.5f), 50); }
+            get { return new Vector3(m_scene.RegionInfo.RegionSizeX * 0.5f, m_scene.RegionInfo.RegionSizeY * 0.5f, 50f); }
             set { }
         }
 
@@ -908,7 +908,7 @@ namespace OpenSim.Region.OptionalModules.Agent.InternetRelayClientView.Server
             // Mimicking LLClientView which gets always set appearance from client.
             AvatarAppearance appearance;
             m_scene.GetAvatarAppearance(this, out appearance);
-            OnSetAppearance(this, appearance.Texture, (byte[])appearance.VisualParams.Clone(), new List<CachedTextureRequestArg>());
+            OnSetAppearance(this, appearance.Texture, (byte[])appearance.VisualParams.Clone(),appearance.AvatarSize, new WearableCacheItem[0]);
         }
 
         public void SendRegionHandshake(RegionInfo regionInfo, RegionHandshakeArgs args)

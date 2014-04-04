@@ -208,7 +208,16 @@ public sealed class BSScene : PhysicsScene, IPhysicsParameters
         Name = EngineType + "/" + RegionName;
     }
 
+    // Old version of initialization that assumes legacy sized regions (256x256)
     public override void Initialise(IMesher meshmerizer, IConfigSource config)
+    {
+        m_log.ErrorFormat("{0} WARNING WARNING WARNING! BulletSim initialized without region extent specification. Terrain will be messed up.");
+        Vector3 regionExtent = new Vector3( Constants.RegionSize, Constants.RegionSize, Constants.RegionSize);
+        Initialise(meshmerizer, config, regionExtent);
+        
+    }
+
+    public override void Initialise(IMesher meshmerizer, IConfigSource config, Vector3 regionExtent)
     {
         mesher = meshmerizer;
         _taintOperations = new List<TaintCallbackEntry>();
@@ -225,6 +234,14 @@ public sealed class BSScene : PhysicsScene, IPhysicsParameters
 
         // Set default values for physics parameters plus any overrides from the ini file
         GetInitialParameterValues(config);
+
+        // Force some parameters to values depending on other configurations
+        // Only use heightmap terrain implementation if terrain larger than legacy size
+        if ((uint)regionExtent.X > Constants.RegionSize || (uint)regionExtent.Y > Constants.RegionSize)
+        {
+            m_log.WarnFormat("{0} Forcing terrain implementation to heightmap for large region", LogHeader);
+            BSParam.TerrainImplementation = (float)BSTerrainPhys.TerrainImplementation.Heightmap;
+        }
 
         // Get the connection to the physics engine (could be native or one of many DLLs)
         PE = SelectUnderlyingBulletEngine(BulletEngineName);
@@ -250,13 +267,13 @@ public sealed class BSScene : PhysicsScene, IPhysicsParameters
         //    a child in a mega-region.
         // Bullet actually doesn't care about the extents of the simulated
         //    area. It tracks active objects no matter where they are.
-        Vector3 worldExtent = new Vector3(Constants.RegionSize, Constants.RegionSize, Constants.RegionHeight);
+        Vector3 worldExtent = regionExtent;
 
         World = PE.Initialize(worldExtent, Params, m_maxCollisionsPerFrame, ref m_collisionArray, m_maxUpdatesPerFrame, ref m_updateArray);
 
         Constraints = new BSConstraintCollection(World);
 
-        TerrainManager = new BSTerrainManager(this);
+        TerrainManager = new BSTerrainManager(this, worldExtent);
         TerrainManager.CreateInitialGroundPlaneAndTerrain();
 
         // Put some informational messages into the log file.

@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) Contributors, http://opensimulator.org/
  * See CONTRIBUTORS.TXT for a full list of copyright holders.
  *
@@ -204,15 +204,26 @@ namespace OpenSim.Services.HypergridService
             return true;
         }
 
-        public GridRegion GetHyperlinkRegion(UUID regionID)
+        public GridRegion GetHyperlinkRegion(UUID regionID, out string message)
         {
             m_log.DebugFormat("[GATEKEEPER SERVICE]: Request to get hyperlink region {0}", regionID);
+            message = null;
 
             if (!m_AllowTeleportsToAnyRegion)
+            {
                 // Don't even check the given regionID
+                message = "Teleporting to the default region.";
                 return m_DefaultGatewayRegion;
+            }
 
             GridRegion region = m_GridService.GetRegionByUUID(m_ScopeID, regionID);
+
+            if (region == null)
+            {
+                message = "The teleport destination could not be found.";
+                return null;
+            }
+
             return region;
         }
 
@@ -228,17 +239,19 @@ namespace OpenSim.Services.HypergridService
                 aCircuit.firstname, aCircuit.lastname, authURL, aCircuit.AgentID, destination.RegionName,
                 aCircuit.Viewer, aCircuit.Channel, aCircuit.IPAddress, aCircuit.Mac, aCircuit.Id0, aCircuit.teleportFlags.ToString());
 
+            string curViewer = Util.GetViewerName(aCircuit);
+
             //
             // Check client
             //
             if (m_AllowedClients != string.Empty)
             {
                 Regex arx = new Regex(m_AllowedClients);
-                Match am = arx.Match(aCircuit.Viewer);
+                Match am = arx.Match(curViewer);
 
                 if (!am.Success)
                 {
-                    m_log.InfoFormat("[GATEKEEPER SERVICE]: Login failed, reason: client {0} is not allowed", aCircuit.Viewer);
+                    m_log.InfoFormat("[GATEKEEPER SERVICE]: Login failed, reason: client {0} is not allowed", curViewer);
                     return false;
                 }
             }
@@ -246,11 +259,11 @@ namespace OpenSim.Services.HypergridService
             if (m_DeniedClients != string.Empty)
             {
                 Regex drx = new Regex(m_DeniedClients);
-                Match dm = drx.Match(aCircuit.Viewer);
+                Match dm = drx.Match(curViewer);
 
                 if (dm.Success)
                 {
-                    m_log.InfoFormat("[GATEKEEPER SERVICE]: Login failed, reason: client {0} is denied", aCircuit.Viewer);
+                    m_log.InfoFormat("[GATEKEEPER SERVICE]: Login failed, reason: client {0} is denied", curViewer);
                     return false;
                 }
             }

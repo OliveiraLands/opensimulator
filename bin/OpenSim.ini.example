@@ -103,36 +103,36 @@
 
     ;# {NonPhysicalPrimMin} {} {Minimum size of nonphysical prims?} {} 0.001
     ;; Minimum size for non-physical prims.  Affects resizing of existing 
-    ;; prims.  This can be overriden in the region config file (as 
+    ;; prims.  This can be overridden in the region config file (as 
     ;; NonPhysicalPrimMin!).
     ; NonPhysicalPrimMin = 0.001
 
     ;# {NonPhysicalPrimMax} {} {Maximum size of nonphysical prims?} {} 256
     ;; Maximum size for non-physical prims.  Affects resizing of existing
-    ;; prims. This can be overriden in the region config file (as 
+    ;; prims. This can be overridden in the region config file (as 
     ;; NonPhysicalPrimMax!).
     ; NonPhysicalPrimMax = 256
 
-    ;# {PhysicalPrimMin} {} {Minimum size of physical prims?} {} 10
-    ;; Maximum size where a prim can be physical.  Affects resizing of
-    ;; existing prims.  This can be overriden in the region config file.
+    ;# {PhysicalPrimMin} {} {Minimum size of physical prims?} {} 0.01
+    ;; Minimum size where a prim can be physical.  Affects resizing of
+    ;; existing prims.  This can be overridden in the region config file.
     ; PhysicalPrimMin = 0.01
 
-    ;# {PhysicalPrimMax} {} {Maximum size of physical prims?} {} 10
+    ;# {PhysicalPrimMax} {} {Maximum size of physical prims?} {} 64
     ;; Maximum size where a prim can be physical.  Affects resizing of
-    ;; existing prims.  This can be overriden in the region config file.
-    ; PhysicalPrimMax = 10
+    ;; existing prims.  This can be overridden in the region config file.
+    ; PhysicalPrimMax = 64
 
     ;# {ClampPrimSize} {} {Clamp viewer rezzed prims to max sizes?} {true false} false
     ;; If a viewer attempts to rez a prim larger than the non-physical or
     ;; physical prim max, clamp the dimensions to the appropriate maximum
-    ;; This can be overriden in the region config file.
+    ;; This can be overridden in the region config file.
     ; ClampPrimSize = false
 	
     ;# {LinksetPrims} {} {Max prims an object will hold?} {} 0
     ;; Maximum number of prims allowable in a linkset. Affects creating new
     ;; linksets. Ignored if less than or equal to zero.
-    ;; This can be overriden in the region config file.
+    ;; This can be overridden in the region config file.
     ; LinksetPrims = 0
 
     ;# {AllowScriptCrossing} {} {Allow scripts to cross into this region} {true false} true
@@ -278,7 +278,7 @@
     ;# {GenerateMaptiles} {} {Generate map tiles?} {true false} true
     ;; Map tile options.  
     ;; If true, then maptiles are generated using the MapImageModule below.
-    ;; If false then the texture referenced by MaptileStaticUUID is used instead, which can also be overriden
+    ;; If false then the texture referenced by MaptileStaticUUID is used instead, which can also be overridden
     ;; in individual region config file(s).  If you do not want to upload map tiles at all, then you will need 
     ;; both to set this to false and comment out the [Modules] MapImageServiceModule setting in config-include/
     ; GenerateMaptiles = true
@@ -297,6 +297,7 @@
 
     ;# {MaptileStaticUUID} {} {Asset ID for static map texture} {} 00000000-0000-0000-0000-000000000000
     ;; If not generating maptiles, use this static texture asset ID
+    ;; This may be overridden on a per region basis in Regions.ini
     ; MaptileStaticUUID = "00000000-0000-0000-0000-000000000000"
 
     ;# {TextureOnMapTile} {} {Use terrain textures for map tiles?} {true false} true
@@ -307,6 +308,18 @@
     ;; Draw objects on maptile.  This step might take a long time if you've
     ;; got a large number of objects, so you can turn it off here if you'd like.
     ; DrawPrimOnMapTile = true
+
+    ;# {TexturePrims} {} {Texture prims on map tiles?} {true false} true
+    ;; Texture the faces of the prims that are rendered on the map tiles.
+    ; TexturePrims = true
+
+    ;# {TexturePrimSize} {} {Size of prims to texture faces?} {} 48
+    ;; Only texture prims that have a diagonal size greater than this number
+    ; TexturePrimSize = 48
+
+    ;# {RenderMeshes} {} {Render meshes and sculpties on map tiles?} {true false} false
+    ;; Attempt to render meshes and sculpties on the map
+    ; RenderMeshes = false;
 
 
 [Permissions]
@@ -691,6 +704,12 @@
     ; enable_windlight = false
 
 
+[Materials]
+    ;# {enable_materials} {} {Enable Materials support?} {true false} true
+    ;; This enables the use of Materials.
+    ; enable_materials = true
+
+
 [DataSnapshot]
     ;# {index_sims} {} {Enable data snapshotting (search)?} {true false} false
     ;; The following set of configs pertains to search.
@@ -808,7 +827,7 @@
 
     ;# {AllowedCompilers} {Enabled:true} {Languages to allow (comma separated)?} {} lsl
     ;; List of allowed languages (lsl,vb,cs)
-    ;; AllowedCompilers=lsl,cs,js,vb.
+    ;; AllowedCompilers=lsl,cs,vb
     ;; *warning*, non lsl languages have access to static methods such as
     ;; System.IO.File.  Enable at your own risk.
     ; AllowedCompilers = "lsl"
@@ -1048,6 +1067,11 @@
   ;; If un-set / "" the module is disabled
   ;; ProfileServiceURL = http://127.0.0.1:8002
 
+[XBakes]
+  ;# {URL} {} {Set URL for Baked texture service} {}
+  ;; Sets the URL for the baked texture ROBUST service.
+  ;; Disabled when unset.
+  ;; URL = http://127.0.0.1:8003
 
 [Architecture]
     ;# {Include-Architecture} {} {Choose one of the following architectures} {config-include/Standalone.ini config-include/StandaloneHypergrid.ini config-include/Grid.ini config-include/GridHypergrid.ini config-include/SimianGrid.ini config-include/HyperSimianGrid.ini} config-include/Standalone.ini

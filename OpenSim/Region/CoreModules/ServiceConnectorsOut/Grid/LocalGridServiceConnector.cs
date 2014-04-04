@@ -48,6 +48,7 @@ namespace OpenSim.Region.CoreModules.ServiceConnectorsOut.Grid
         private static readonly ILog m_log =
                 LogManager.GetLogger(
                 MethodBase.GetCurrentMethod().DeclaringType);
+        private static string LogHeader = "[LOCAL GRID SERVICE CONNECTOR]";
 
         private IGridService m_GridService;
         private Dictionary<UUID, RegionCache> m_LocalCache = new Dictionary<UUID, RegionCache>();
@@ -56,12 +57,12 @@ namespace OpenSim.Region.CoreModules.ServiceConnectorsOut.Grid
 
         public LocalGridServicesConnector()
         {
-            m_log.Debug("[LOCAL GRID SERVICE CONNECTOR]: LocalGridServicesConnector no parms.");
+            m_log.DebugFormat("{0} LocalGridServicesConnector no parms.", LogHeader);
         }
 
         public LocalGridServicesConnector(IConfigSource source)
         {
-            m_log.Debug("[LOCAL GRID SERVICE CONNECTOR]: LocalGridServicesConnector instantiated directly.");
+            m_log.DebugFormat("{0} LocalGridServicesConnector instantiated directly.", LogHeader);
             InitialiseService(source);
         }
 
@@ -192,6 +193,9 @@ namespace OpenSim.Region.CoreModules.ServiceConnectorsOut.Grid
             return m_GridService.GetRegionByUUID(scopeID, regionID);
         }
 
+        // Get a region given its base coordinates.
+        // NOTE: this is NOT 'get a region by some point in the region'. The coordinate MUST
+        //     be the base coordinate of the region.
         public GridRegion GetRegionByPosition(UUID scopeID, int x, int y)
         {
             GridRegion region = null;
@@ -206,13 +210,25 @@ namespace OpenSim.Region.CoreModules.ServiceConnectorsOut.Grid
                     region = rcache.GetRegionByPosition(x, y);
                     if (region != null)
                     {
-                        return region;
+                        // m_log.DebugFormat("{0} GetRegionByPosition. Found region {1} in cache. Pos=<{2},{3}>",
+                        //                 LogHeader, region.RegionName, x, y);
+                        break;
                     }
                 }
             }
 
             // Then try on this sim (may be a lookup in DB if this is using MySql).
-            return m_GridService.GetRegionByPosition(scopeID, x, y);
+            if (region == null)
+            {
+                region = m_GridService.GetRegionByPosition(scopeID, x, y);
+                if (region == null)
+                    m_log.DebugFormat("{0} GetRegionByPosition. Region not found by grid service. Pos=<{1},{2}>",
+                                        LogHeader, x, y);
+                else
+                    m_log.DebugFormat("{0} GetRegionByPosition. Requested region {1} from grid service. Pos=<{2},{3}>",
+                                        LogHeader, region.RegionName, x, y);
+            }
+            return region;
         }
 
         public GridRegion GetRegionByName(UUID scopeID, string regionName)
@@ -268,7 +284,7 @@ namespace OpenSim.Region.CoreModules.ServiceConnectorsOut.Grid
                     caps.AppendFormat("*** Neighbours of {0} ({1}) ***\n", kvp.Value.RegionName, kvp.Key);
                     List<GridRegion> regions = kvp.Value.GetNeighbours();
                     foreach (GridRegion r in regions)
-                        caps.AppendFormat("    {0} @ {1}-{2}\n", r.RegionName, r.RegionLocX / Constants.RegionSize, r.RegionLocY / Constants.RegionSize);
+                        caps.AppendFormat("    {0} @ {1}-{2}\n", r.RegionName, Util.WorldToRegionLoc((uint)r.RegionLocX), Util.WorldToRegionLoc((uint)r.RegionLocY));
                 }
             }
 

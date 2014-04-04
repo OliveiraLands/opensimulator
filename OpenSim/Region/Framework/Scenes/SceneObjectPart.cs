@@ -1299,7 +1299,7 @@ namespace OpenSim.Region.Framework.Scenes
         /// <value>
         /// null if there are no sitting avatars.  This is to save us create a hashset for every prim in a scene.
         /// </value>
-        private HashSet<UUID> m_sittingAvatars;
+        private HashSet<ScenePresence> m_sittingAvatars;
 
         public virtual UUID RegionID
         {
@@ -1753,7 +1753,11 @@ namespace OpenSim.Region.Framework.Scenes
         /// <returns></returns>
         public SceneObjectPart Copy(uint localID, UUID AgentID, UUID GroupID, int linkNum, bool userExposed)
         {
+            // FIXME: This is dangerous since it's easy to forget to reset some references when necessary and end up 
+            // with bugs that only occur in some circumstances (e.g. crossing between regions on the same simulator
+            // but not between regions on different simulators).  Really, all copying should be done explicitly.
             SceneObjectPart dupe = (SceneObjectPart)MemberwiseClone();
+
             dupe.m_shape = m_shape.Copy();
             dupe.m_regionHandle = m_regionHandle;
             if (userExposed)
@@ -1798,6 +1802,8 @@ namespace OpenSim.Region.Framework.Scenes
             byte[] extraP = new byte[Shape.ExtraParams.Length];
             Array.Copy(Shape.ExtraParams, extraP, extraP.Length);
             dupe.Shape.ExtraParams = extraP;
+
+            dupe.m_sittingAvatars = new HashSet<ScenePresence>();
 
             // safeguard  actual copy is done in sog.copy
             dupe.KeyframeMotion = null;
@@ -2479,13 +2485,10 @@ namespace OpenSim.Region.Framework.Scenes
 
             if (pa != null)
             {
-                Vector3 newpos = new Vector3(pa.Position.GetBytes(), 0);
-                
-                if (ParentGroup.Scene.TestBorderCross(newpos, Cardinals.N)
-                    | ParentGroup.Scene.TestBorderCross(newpos, Cardinals.S)
-                    | ParentGroup.Scene.TestBorderCross(newpos, Cardinals.E)
-                    | ParentGroup.Scene.TestBorderCross(newpos, Cardinals.W))
+                Vector3 newpos = pa.Position;
+                if (!ParentGroup.Scene.PositionIsInCurrentRegion(newpos))
                 {
+                    // Setting position outside current region will start region crossing
                     ParentGroup.AbsolutePosition = newpos;
                     return;
                 }
@@ -4800,6 +4803,64 @@ namespace OpenSim.Region.Framework.Scenes
         {
             ParentGroup.AddScriptLPS(count);
         }
+
+        /// <summary>
+        /// Sets a prim's owner and permissions when it's rezzed.
+        /// </summary>
+        /// <param name="item">The inventory item from which the item was rezzed</param>
+        /// <param name="userInventory">True: the item is being rezzed from the user's inventory. False: from a prim's inventory.</param>
+        /// <param name="scene">The scene the prim is being rezzed into</param>
+        public void ApplyPermissionsOnRez(InventoryItemBase item, bool userInventory, Scene scene)
+        {
+            if ((OwnerID != item.Owner) || ((item.CurrentPermissions & SceneObjectGroup.SLAM) != 0) || ((item.Flags & (uint)InventoryItemFlags.ObjectSlamPerm) != 0))
+            {
+                if (scene.Permissions.PropagatePermissions())
+                {
+                    if ((item.Flags & (uint)InventoryItemFlags.ObjectHasMultipleItems) == 0)
+                    {
+                        // Apply the item's permissions to the object
+                        //LogPermissions("Before applying item permissions");
+                        if (userInventory)
+                        {
+                            EveryoneMask = item.EveryOnePermissions;
+                            NextOwnerMask = item.NextPermissions;
+                        }
+                        else
+                        {
+                            if ((item.Flags & (uint)InventoryItemFlags.ObjectOverwriteEveryone) != 0)
+                                EveryoneMask = item.EveryOnePermissions;
+                            if ((item.Flags & (uint)InventoryItemFlags.ObjectOverwriteNextOwner) != 0)
+                                NextOwnerMask = item.NextPermissions;
+                            if ((item.Flags & (uint)InventoryItemFlags.ObjectOverwriteGroup) != 0)
+                                GroupMask = item.GroupPermissions;
+                        }
+                        //LogPermissions("After applying item permissions");
+                    }
+                }
+
+                GroupMask = 0; // DO NOT propagate here
+            }
+
+            if (OwnerID != item.Owner)
+            {
+                //LogPermissions("Before ApplyNextOwnerPermissions");
+                ApplyNextOwnerPermissions();
+                //LogPermissions("After ApplyNextOwnerPermissions");
+
+                LastOwnerID = OwnerID;
+                OwnerID = item.Owner;
+                Inventory.ChangeInventoryOwner(item.Owner);
+            }
+        }
+
+        /// <summary>
+        /// Logs the prim's permissions. Useful when debugging permission problems.
+        /// </summary>
+        /// <param name="message"></param>
+        private void LogPermissions(String message)
+        {
+            PermissionsUtil.LogPermissions(Name, message, BaseMask, OwnerMask, NextOwnerMask);
+        }
         
         public void ApplyNextOwnerPermissions()
         {
@@ -4856,19 +4917,19 @@ namespace OpenSim.Region.Framework.Scenes
         /// true if the avatar was not already recorded, false otherwise.
         /// </returns>
         /// <param name='avatarId'></param>
-        protected internal bool AddSittingAvatar(UUID avatarId)
+        protected internal bool AddSittingAvatar(ScenePresence sp)
         {
             lock (ParentGroup.m_sittingAvatars)
             {
                 if (IsSitTargetSet && SitTargetAvatar == UUID.Zero)
-                    SitTargetAvatar = avatarId;
+                    SitTargetAvatar = sp.UUID;
 
                 if (m_sittingAvatars == null)
-                    m_sittingAvatars = new HashSet<UUID>();
+                    m_sittingAvatars = new HashSet<ScenePresence>();
 
-                if (m_sittingAvatars.Add(avatarId))
+                if (m_sittingAvatars.Add(sp))
                 {
-                    ParentGroup.m_sittingAvatars.Add(avatarId);
+                    ParentGroup.m_sittingAvatars.Add(sp);
 
                     return true;
                 }
@@ -4885,22 +4946,22 @@ namespace OpenSim.Region.Framework.Scenes
         /// true if the avatar was present and removed, false if it was not present.
         /// </returns>
         /// <param name='avatarId'></param>
-        protected internal bool RemoveSittingAvatar(UUID avatarId)
+        protected internal bool RemoveSittingAvatar(ScenePresence sp)
         {
             lock (ParentGroup.m_sittingAvatars)
             {
-                if (SitTargetAvatar == avatarId)
+                if (SitTargetAvatar == sp.UUID)
                     SitTargetAvatar = UUID.Zero;
 
                 if (m_sittingAvatars == null)
                     return false;
 
-                if (m_sittingAvatars.Remove(avatarId))
+                if (m_sittingAvatars.Remove(sp))
                 {
                     if (m_sittingAvatars.Count == 0)
                         m_sittingAvatars = null;
 
-                    ParentGroup.m_sittingAvatars.Remove(avatarId);
+                    ParentGroup.m_sittingAvatars.Remove(sp);
 
                     return true;
                 }
@@ -4914,14 +4975,14 @@ namespace OpenSim.Region.Framework.Scenes
         /// </summary>
         /// <remarks>This applies to all sitting avatars whether there is a sit target set or not.</remarks>
         /// <returns>A hashset of the sitting avatars.  Returns null if there are no sitting avatars.</returns>
-        public HashSet<UUID> GetSittingAvatars()
+        public HashSet<ScenePresence> GetSittingAvatars()
         {
             lock (ParentGroup.m_sittingAvatars)
             {
                 if (m_sittingAvatars == null)
                     return null;
                 else
-                    return new HashSet<UUID>(m_sittingAvatars);
+                    return new HashSet<ScenePresence>(m_sittingAvatars);
             }
         }
 

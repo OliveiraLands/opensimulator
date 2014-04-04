@@ -63,9 +63,9 @@ namespace OpenSim.Tests.Common
         /// </summary>
         public SceneManager SceneManager { get; private set; }
 
+        public ISimulationDataService SimDataService { get; private set; }
+
         private AgentCircuitManager m_acm = new AgentCircuitManager();
-        private ISimulationDataService m_simDataService
-            = OpenSim.Server.Base.ServerUtils.LoadPlugin<ISimulationDataService>("OpenSim.Tests.Common.dll", null);
         private IEstateDataService m_estateDataService = null;
 
         private LocalAssetServicesConnector m_assetService;
@@ -96,6 +96,9 @@ namespace OpenSim.Tests.Common
             m_presenceService.PostInitialise();
 
             m_cache = cache;
+
+            SimDataService 
+                = OpenSim.Server.Base.ServerUtils.LoadPlugin<ISimulationDataService>("OpenSim.Tests.Common.dll", null);
         }
 
         /// <summary>
@@ -139,7 +142,7 @@ namespace OpenSim.Tests.Common
             SceneCommunicationService scs = new SceneCommunicationService();
 
             TestScene testScene = new TestScene(
-                regInfo, m_acm, scs, m_simDataService, m_estateDataService, configSource, null);
+                regInfo, m_acm, scs, SimDataService, m_estateDataService, configSource, null);
 
             INonSharedRegionModule godsModule = new GodsModule();
             godsModule.Initialise(new IniConfigSource());
@@ -186,8 +189,9 @@ namespace OpenSim.Tests.Common
 
             PhysicsPluginManager physicsPluginManager = new PhysicsPluginManager();
             physicsPluginManager.LoadPluginsFromAssembly("Physics/OpenSim.Region.Physics.BasicPhysicsPlugin.dll");
+            Vector3 regionExtent = new Vector3( regInfo.RegionSizeX, regInfo.RegionSizeY, regInfo.RegionSizeZ);
             testScene.PhysicsScene
-                = physicsPluginManager.GetPhysicsScene("basicphysics", "ZeroMesher", new IniConfigSource(), "test");
+                = physicsPluginManager.GetPhysicsScene("basicphysics", "ZeroMesher", new IniConfigSource(), "test", regionExtent);
 
             testScene.RegionInfo.EstateSettings = new EstateSettings();
             testScene.LoginsEnabled = true;
@@ -586,6 +590,32 @@ namespace OpenSim.Tests.Common
 
             //part.UpdatePrimFlags(false, false, true);
             //part.ObjectFlags |= (uint)PrimFlags.Phantom;
+
+            scene.AddNewSceneObject(so, false);
+
+            return so;
+        }
+
+        /// <summary>
+        /// Add a test object
+        /// </summary>
+        /// <param name="scene"></param>
+        /// <param name="parts">
+        /// The number of parts that should be in the scene object
+        /// </param>
+        /// <param name="ownerId"></param>
+        /// <param name="partNamePrefix">
+        /// The prefix to be given to part names.  This will be suffixed with "Part<part no>"
+        /// (e.g. mynamePart1 for the root part)
+        /// </param>
+        /// <param name="uuidTail">
+        /// The hexadecimal last part of the UUID for parts created.  A UUID of the form "00000000-0000-0000-0000-{0:XD12}"
+        /// will be given to the root part, and incremented for each part thereafter.
+        /// </param>
+        /// <returns></returns>
+        public static SceneObjectGroup AddSceneObject(Scene scene, int parts, UUID ownerId, string partNamePrefix, int uuidTail)
+        {
+            SceneObjectGroup so = CreateSceneObject(parts, ownerId, partNamePrefix, uuidTail);
 
             scene.AddNewSceneObject(so, false);
 

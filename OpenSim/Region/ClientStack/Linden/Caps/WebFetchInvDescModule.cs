@@ -65,7 +65,27 @@ namespace OpenSim.Region.ClientStack.Linden
 
         // private static readonly ILog m_log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
 
-        private Scene m_scene;
+
+        /// <summary>
+        /// Control whether requests will be processed asynchronously.
+        /// </summary>
+        /// <remarks>
+        /// Defaults to true.  Can currently not be changed once a region has been added to the module.
+        /// </remarks>
+        public bool ProcessQueuedRequestsAsync { get; private set; }
+
+        /// <summary>
+        /// Number of inventory requests processed by this module.
+        /// </summary>
+        /// <remarks>
+        /// It's the PollServiceRequestManager that actually sends completed requests back to the requester.
+        /// </remarks>
+        public static int ProcessedRequestsCount { get; set; }
+
+        private static Stat s_queuedRequestsStat;
+        private static Stat s_processedRequestsStat;
+
+        public Scene Scene { get; private set; }
 
         private IInventoryService m_InventoryService;
         private ILibraryService m_LibraryService;
@@ -83,6 +103,13 @@ namespace OpenSim.Region.ClientStack.Linden
                 new DoubleQueue<aPollRequest>();
 
         #region ISharedRegionModule Members
+
+        public WebFetchInvDescModule() : this(true) {}
+
+        public WebFetchInvDescModule(bool processQueuedResultsAsync)
+        {
+            ProcessQueuedRequestsAsync = processQueuedResultsAsync;
+        }
 
         public void Initialise(IConfigSource source)
         {
@@ -104,7 +131,7 @@ namespace OpenSim.Region.ClientStack.Linden
             if (!m_Enabled)
                 return;
 
-            m_scene = s;
+            Scene = s;
         }
 
         public void RemoveRegion(Scene s)
@@ -112,12 +139,23 @@ namespace OpenSim.Region.ClientStack.Linden
             if (!m_Enabled)
                 return;
 
-            m_scene.EventManager.OnRegisterCaps -= RegisterCaps;
+            Scene.EventManager.OnRegisterCaps -= RegisterCaps;
 
-            foreach (Thread t in m_workerThreads)
-                Watchdog.AbortThread(t.ManagedThreadId);
+            StatsManager.DeregisterStat(s_processedRequestsStat);
+            StatsManager.DeregisterStat(s_queuedRequestsStat);
 
-            m_scene = null;
+            if (ProcessQueuedRequestsAsync)
+            {
+                if (m_workerThreads != null)
+                {
+                    foreach (Thread t in m_workerThreads)
+                        Watchdog.AbortThread(t.ManagedThreadId);
+
+                    m_workerThreads = null;
+                }
+            }
+
+            Scene = null;
         }
 
         public void RegionLoaded(Scene s)
@@ -125,15 +163,46 @@ namespace OpenSim.Region.ClientStack.Linden
             if (!m_Enabled)
                 return;
 
-            m_InventoryService = m_scene.InventoryService;
-            m_LibraryService = m_scene.LibraryService;
+            if (s_processedRequestsStat == null)
+                s_processedRequestsStat =
+                    new Stat(
+                        "ProcessedFetchInventoryRequests",
+                        "Number of processed fetch inventory requests",
+                        "These have not necessarily yet been dispatched back to the requester.",
+                        "",
+                        "inventory",
+                        "httpfetch",
+                        StatType.Pull,
+                        MeasuresOfInterest.AverageChangeOverTime,
+                        stat => { stat.Value = ProcessedRequestsCount; },
+                        StatVerbosity.Debug);
+
+            if (s_queuedRequestsStat == null)
+                s_queuedRequestsStat =
+                    new Stat(
+                        "QueuedFetchInventoryRequests",
+                        "Number of fetch inventory requests queued for processing",
+                        "",
+                        "",
+                        "inventory",
+                        "httpfetch",
+                        StatType.Pull,
+                        MeasuresOfInterest.AverageChangeOverTime,
+                        stat => { stat.Value = m_queue.Count; },
+                        StatVerbosity.Debug);
+
+            StatsManager.RegisterStat(s_processedRequestsStat);
+            StatsManager.RegisterStat(s_queuedRequestsStat);
+
+            m_InventoryService = Scene.InventoryService;
+            m_LibraryService = Scene.LibraryService;
 
             // We'll reuse the same handler for all requests.
             m_webFetchHandler = new WebFetchInvDescHandler(m_InventoryService, m_LibraryService);
 
-            m_scene.EventManager.OnRegisterCaps += RegisterCaps;
+            Scene.EventManager.OnRegisterCaps += RegisterCaps;
 
-            if (m_workerThreads == null)
+            if (ProcessQueuedRequestsAsync && m_workerThreads == null)
             {
                 m_workerThreads = new Thread[2];
 
@@ -172,12 +241,12 @@ namespace OpenSim.Region.ClientStack.Linden
             private Dictionary<UUID, Hashtable> responses =
                     new Dictionary<UUID, Hashtable>();
 
-            private Scene m_scene;
+            private WebFetchInvDescModule m_module;
 
-            public PollServiceInventoryEventArgs(Scene scene, string url, UUID pId) :
-                    base(null, url, null, null, null, pId, int.MaxValue)
+            public PollServiceInventoryEventArgs(WebFetchInvDescModule module, string url, UUID pId) :
+                base(null, url, null, null, null, pId, int.MaxValue)
             {
-                m_scene = scene;
+                m_module = module;
 
                 HasEvents = (x, y) => { lock (responses) return responses.ContainsKey(x); };
                 GetEvents = (x, y) =>
@@ -197,7 +266,7 @@ namespace OpenSim.Region.ClientStack.Linden
 
                 Request = (x, y) =>
                 {
-                    ScenePresence sp = m_scene.GetScenePresence(Id);
+                    ScenePresence sp = m_module.Scene.GetScenePresence(Id);
                     if (sp == null)
                     {
                         m_log.ErrorFormat("[INVENTORY]: Unable to find ScenePresence for {0}", Id);
@@ -297,6 +366,8 @@ namespace OpenSim.Region.ClientStack.Linden
 
                 lock (responses)
                     responses[requestID] = response;
+
+                WebFetchInvDescModule.ProcessedRequestsCount++;
             }
         }
 
@@ -320,7 +391,7 @@ namespace OpenSim.Region.ClientStack.Linden
                 capUrl = "/CAPS/" + UUID.Random() + "/";
 
                 // Register this as a poll service
-                PollServiceInventoryEventArgs args = new PollServiceInventoryEventArgs(m_scene, capUrl, agentID);
+                PollServiceInventoryEventArgs args = new PollServiceInventoryEventArgs(this, capUrl, agentID);
                 args.Type = PollServiceEventArgs.EventType.Inventory;
 
                 caps.RegisterPollHandler(capName, args);
@@ -329,7 +400,7 @@ namespace OpenSim.Region.ClientStack.Linden
             else
             {
                 capUrl = url;
-                IExternalCapsModule handler = m_scene.RequestModuleInterface<IExternalCapsModule>();
+                IExternalCapsModule handler = Scene.RequestModuleInterface<IExternalCapsModule>();
                 if (handler != null)
                     handler.RegisterExternalUserCapsHandler(agentID,caps,capName,capUrl);
                 else
@@ -358,11 +429,16 @@ namespace OpenSim.Region.ClientStack.Linden
             {
                 Watchdog.UpdateThread();
 
-                aPollRequest poolreq = m_queue.Dequeue();
-
-                if (poolreq != null && poolreq.thepoll != null)
-                    poolreq.thepoll.Process(poolreq);
+                WaitProcessQueuedInventoryRequest();
             }
+        }
+
+        public void WaitProcessQueuedInventoryRequest()
+        {
+            aPollRequest poolreq = m_queue.Dequeue();
+
+            if (poolreq != null && poolreq.thepoll != null)
+                poolreq.thepoll.Process(poolreq);
         }
     }
 }

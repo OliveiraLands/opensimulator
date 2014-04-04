@@ -96,13 +96,41 @@ namespace OpenSim.Region.CoreModules.World.Archiver
 
         /// <value>
         /// Should the archive being loaded be merged with what is already on the region?
+        /// Merging usually suppresses terrain and parcel loading
         /// </value>
         protected bool m_merge;
+
+        /// <value>
+        /// If true, force the loading of terrain from the oar file
+        /// </value>
+        protected bool m_forceTerrain;
+
+        /// <value>
+        /// If true, force the loading of parcels from the oar file
+        /// </value>
+        protected bool m_forceParcels;
 
         /// <value>
         /// Should we ignore any assets when reloading the archive?
         /// </value>
         protected bool m_skipAssets;
+
+        /// <value>
+        /// Displacement added to each object as it is added to the world
+        /// </value>
+        protected Vector3 m_displacement = Vector3.Zero;
+
+        /// <value>
+        /// Rotation (in radians) to apply to the objects as they are loaded.
+        /// </value>
+        protected float m_rotation = 0f;
+
+        /// <value>
+        /// Center around which to apply the rotation relative to the origional oar position
+        /// </value>
+        protected Vector3 m_rotationCenter = new Vector3(Constants.RegionSize / 2f, Constants.RegionSize / 2f, 0f);
+
+        protected bool m_noObjects = false;
 
         /// <summary>
         /// Used to cache lookups for valid uuids.
@@ -132,7 +160,7 @@ namespace OpenSim.Region.CoreModules.World.Archiver
         private IAssetService m_assetService = null;
 
 
-        public ArchiveReadRequest(Scene scene, string loadPath, bool merge, bool skipAssets, Guid requestId)
+        public ArchiveReadRequest(Scene scene, string loadPath, Guid requestId, Dictionary<string,object>options)
         {
             m_rootScene = scene;
 
@@ -150,24 +178,32 @@ namespace OpenSim.Region.CoreModules.World.Archiver
             }
         
             m_errorMessage = String.Empty;
-            m_merge = merge;
-            m_skipAssets = skipAssets;
+            m_merge = options.ContainsKey("merge");
+            m_forceTerrain = options.ContainsKey("force-terrain");
+            m_forceParcels = options.ContainsKey("force-parcels");
+            m_noObjects = options.ContainsKey("no-objects");
+            m_skipAssets = options.ContainsKey("skipAssets");
             m_requestId = requestId;
+            m_displacement = options.ContainsKey("displacement") ? (Vector3)options["displacement"] : Vector3.Zero;
+            m_rotation = options.ContainsKey("rotation") ? (float)options["rotation"] : 0f;
+            m_rotationCenter = options.ContainsKey("rotation-center") ? (Vector3)options["rotation-center"] 
+                                : new Vector3(scene.RegionInfo.RegionSizeX / 2f, scene.RegionInfo.RegionSizeY / 2f, 0f);
 
-            // Zero can never be a valid user id
+            // Zero can never be a valid user or group id
             m_validUserUuids[UUID.Zero] = false;
+            m_validGroupUuids[UUID.Zero] = false;
 
             m_groupsModule = m_rootScene.RequestModuleInterface<IGroupsModule>();
             m_assetService = m_rootScene.AssetService;
         }
 
-        public ArchiveReadRequest(Scene scene, Stream loadStream, bool merge, bool skipAssets, Guid requestId)
+        public ArchiveReadRequest(Scene scene, Stream loadStream, Guid requestId, Dictionary<string, object>options)
         {
             m_rootScene = scene;
             m_loadPath = null;
             m_loadStream = loadStream;
-            m_merge = merge;
-            m_skipAssets = skipAssets;
+            m_skipAssets = options.ContainsKey("skipAssets");
+            m_merge = options.ContainsKey("merge");
             m_requestId = requestId;
 
             // Zero can never be a valid user id
@@ -229,7 +265,7 @@ namespace OpenSim.Region.CoreModules.World.Archiver
 
                     // Process the file
 
-                    if (filePath.StartsWith(ArchiveConstants.OBJECTS_PATH))
+                    if (filePath.StartsWith(ArchiveConstants.OBJECTS_PATH) && !m_noObjects)
                     {
                         sceneContext.SerialisedSceneObjects.Add(Encoding.UTF8.GetString(data));
                     }
@@ -243,7 +279,7 @@ namespace OpenSim.Region.CoreModules.World.Archiver
                         if ((successfulAssetRestores + failedAssetRestores) % 250 == 0)
                             m_log.Debug("[ARCHIVER]: Loaded " + successfulAssetRestores + " assets and failed to load " + failedAssetRestores + " assets...");
                     }
-                    else if (!m_merge && filePath.StartsWith(ArchiveConstants.TERRAINS_PATH))
+                    else if (filePath.StartsWith(ArchiveConstants.TERRAINS_PATH) && (!m_merge || m_forceTerrain))
                     {
                         LoadTerrain(scene, filePath, data);
                     }
@@ -251,7 +287,7 @@ namespace OpenSim.Region.CoreModules.World.Archiver
                     {
                         LoadRegionSettings(scene, filePath, data, dearchivedScenes);
                     } 
-                    else if (!m_merge && filePath.StartsWith(ArchiveConstants.LANDDATA_PATH))
+                    else if (filePath.StartsWith(ArchiveConstants.LANDDATA_PATH) && (!m_merge || m_forceParcels))
                     {
                         sceneContext.SerialisedParcels.Add(Encoding.UTF8.GetString(data));
                     } 
@@ -321,7 +357,7 @@ namespace OpenSim.Region.CoreModules.World.Archiver
             // Start the scripts. We delayed this because we want the OAR to finish loading ASAP, so
             // that users can enter the scene. If we allow the scripts to start in the loop above
             // then they significantly increase the time until the OAR finishes loading.
-            Util.FireAndForget(delegate(object o)
+            Util.RunThreadNoTimeout(delegate(object o)
             {
                 Thread.Sleep(15000);
                 m_log.Info("[ARCHIVER]: Starting scripts in scene objects");
@@ -336,7 +372,7 @@ namespace OpenSim.Region.CoreModules.World.Archiver
 
                     sceneContext.SceneObjects.Clear();
                 }
-            });
+            }, "ReadArchiveStartScripts", null);
 
             m_log.InfoFormat("[ARCHIVER]: Successfully loaded archive");
 
@@ -422,6 +458,8 @@ namespace OpenSim.Region.CoreModules.World.Archiver
             // Reload serialized prims
             m_log.InfoFormat("[ARCHIVER]: Loading {0} scene objects.  Please wait.", serialisedSceneObjects.Count);
 
+            OpenMetaverse.Quaternion rot = OpenMetaverse.Quaternion.CreateFromAxisAngle(0, 0, 1, m_rotation);
+
             UUID oldTelehubUUID = scene.RegionInfo.RegionSettings.TelehubObject;
 
             IRegionSerialiserModule serialiser = scene.RequestModuleInterface<IRegionSerialiserModule>();
@@ -445,6 +483,32 @@ namespace OpenSim.Region.CoreModules.World.Archiver
 
                 SceneObjectGroup sceneObject = serialiser.DeserializeGroupFromXml2(serialisedSceneObject);
 
+                // Happily this does not do much to the object since it hasn't been added to the scene yet
+                if (!sceneObject.IsAttachment)
+                {
+                    if (m_displacement != Vector3.Zero || m_rotation != 0f)
+                    {
+                        Vector3 pos = sceneObject.AbsolutePosition;
+                        if (m_rotation != 0f)
+                        {
+                            // Rotate the object
+                            sceneObject.RootPart.RotationOffset = rot * sceneObject.GroupRotation;
+                            // Get object position relative to rotation axis
+                            Vector3 offset = pos - m_rotationCenter;
+                            // Rotate the object position
+                            offset *= rot;
+                            // Restore the object position back to relative to the region
+                            pos = m_rotationCenter + offset;
+                        }
+                        if (m_displacement != Vector3.Zero)
+                        {
+                            pos += m_displacement;
+                        }
+                        sceneObject.AbsolutePosition = pos;
+                    }
+                }
+
+
                 bool isTelehub = (sceneObject.UUID == oldTelehubUUID) && (oldTelehubUUID != UUID.Zero);
 
                 // For now, give all incoming scene objects new uuids.  This will allow scenes to be cloned
@@ -460,58 +524,7 @@ namespace OpenSim.Region.CoreModules.World.Archiver
                     oldTelehubUUID = UUID.Zero;
                 }
 
-                // Try to retain the original creator/owner/lastowner if their uuid is present on this grid
-                // or creator data is present.  Otherwise, use the estate owner instead.
-                foreach (SceneObjectPart part in sceneObject.Parts)
-                {
-                    if (string.IsNullOrEmpty(part.CreatorData))
-                    {
-                        if (!ResolveUserUuid(scene, part.CreatorID))
-                            part.CreatorID = scene.RegionInfo.EstateSettings.EstateOwner;
-                    }
-                    if (UserManager != null)
-                        UserManager.AddUser(part.CreatorID, part.CreatorData);
-
-                    if (!ResolveUserUuid(scene, part.OwnerID))
-                        part.OwnerID = scene.RegionInfo.EstateSettings.EstateOwner;
-
-                    if (!ResolveUserUuid(scene, part.LastOwnerID))
-                        part.LastOwnerID = scene.RegionInfo.EstateSettings.EstateOwner;
-
-                    if (!ResolveGroupUuid(part.GroupID))
-                        part.GroupID = UUID.Zero;
-
-                    // And zap any troublesome sit target information
-//                    part.SitTargetOrientation = new Quaternion(0, 0, 0, 1);
-//                    part.SitTargetPosition    = new Vector3(0, 0, 0);
-
-                    // Fix ownership/creator of inventory items
-                    // Not doing so results in inventory items
-                    // being no copy/no mod for everyone
-                    lock (part.TaskInventory)
-                    {
-                        TaskInventoryDictionary inv = part.TaskInventory;
-                        foreach (KeyValuePair<UUID, TaskInventoryItem> kvp in inv)
-                        {
-                            if (!ResolveUserUuid(scene, kvp.Value.OwnerID))
-                            {
-                                kvp.Value.OwnerID = scene.RegionInfo.EstateSettings.EstateOwner;
-                            }
-
-                            if (string.IsNullOrEmpty(kvp.Value.CreatorData))
-                            {
-                                if (!ResolveUserUuid(scene, kvp.Value.CreatorID))
-                                    kvp.Value.CreatorID = scene.RegionInfo.EstateSettings.EstateOwner;
-                            }
-
-                            if (UserManager != null)
-                                UserManager.AddUser(kvp.Value.CreatorID, kvp.Value.CreatorData);
-
-                            if (!ResolveGroupUuid(kvp.Value.GroupID))
-                                kvp.Value.GroupID = UUID.Zero;
-                        }
-                    }
-                }
+                ModifySceneObject(scene, sceneObject);
 
                 if (scene.AddRestoredSceneObject(sceneObject, true, false))
                 {
@@ -535,6 +548,67 @@ namespace OpenSim.Region.CoreModules.World.Archiver
                 scene.RegionInfo.RegionSettings.ClearSpawnPoints();
             }
         }
+
+        /// <summary>
+        /// Optionally modify a loaded SceneObjectGroup. Currently this just ensures that the
+        /// User IDs and Group IDs are valid, but other manipulations could be done as well.
+        /// </summary>
+        private void ModifySceneObject(Scene scene, SceneObjectGroup sceneObject)
+        {
+            // Try to retain the original creator/owner/lastowner if their uuid is present on this grid
+            // or creator data is present.  Otherwise, use the estate owner instead.
+            foreach (SceneObjectPart part in sceneObject.Parts)
+            {
+                if (string.IsNullOrEmpty(part.CreatorData))
+                {
+                    if (!ResolveUserUuid(scene, part.CreatorID))
+                        part.CreatorID = scene.RegionInfo.EstateSettings.EstateOwner;
+                }
+                if (UserManager != null)
+                    UserManager.AddUser(part.CreatorID, part.CreatorData);
+
+                if (!(ResolveUserUuid(scene, part.OwnerID) || ResolveGroupUuid(part.OwnerID)))
+                    part.OwnerID = scene.RegionInfo.EstateSettings.EstateOwner;
+
+                if (!(ResolveUserUuid(scene, part.LastOwnerID) || ResolveGroupUuid(part.LastOwnerID)))
+                    part.LastOwnerID = scene.RegionInfo.EstateSettings.EstateOwner;
+
+                if (!ResolveGroupUuid(part.GroupID))
+                    part.GroupID = UUID.Zero;
+
+                // And zap any troublesome sit target information
+                //                    part.SitTargetOrientation = new Quaternion(0, 0, 0, 1);
+                //                    part.SitTargetPosition    = new Vector3(0, 0, 0);
+
+                // Fix ownership/creator of inventory items
+                // Not doing so results in inventory items
+                // being no copy/no mod for everyone
+                lock (part.TaskInventory)
+                {
+                    TaskInventoryDictionary inv = part.TaskInventory;
+                    foreach (KeyValuePair<UUID, TaskInventoryItem> kvp in inv)
+                    {
+                        if (!(ResolveUserUuid(scene, kvp.Value.OwnerID) || ResolveGroupUuid(kvp.Value.OwnerID)))
+                        {
+                            kvp.Value.OwnerID = scene.RegionInfo.EstateSettings.EstateOwner;
+                        }
+
+                        if (string.IsNullOrEmpty(kvp.Value.CreatorData))
+                        {
+                            if (!ResolveUserUuid(scene, kvp.Value.CreatorID))
+                                kvp.Value.CreatorID = scene.RegionInfo.EstateSettings.EstateOwner;
+                        }
+
+                        if (UserManager != null)
+                            UserManager.AddUser(kvp.Value.CreatorID, kvp.Value.CreatorData);
+
+                        if (!ResolveGroupUuid(kvp.Value.GroupID))
+                            kvp.Value.GroupID = UUID.Zero;
+                    }
+                }
+            }
+        }
+
         
         /// <summary>
         /// Load serialized parcels.
@@ -549,6 +623,13 @@ namespace OpenSim.Region.CoreModules.World.Archiver
             foreach (string serialisedParcel in serialisedParcels)
             {
                 LandData parcel = LandDataSerializer.Deserialize(serialisedParcel);
+
+                if (m_displacement != Vector3.Zero)
+                {
+                    Vector3 parcelDisp = new Vector3(m_displacement.X, m_displacement.Y, 0f);
+                    parcel.AABBMin += parcelDisp;
+                    parcel.AABBMax += parcelDisp;
+                }
                 
                 // Validate User and Group UUID's
 
@@ -625,9 +706,6 @@ namespace OpenSim.Region.CoreModules.World.Archiver
         /// <returns></returns>
         private bool ResolveGroupUuid(UUID uuid)
         {
-            if (uuid == UUID.Zero)
-                return true;    // this means the object has no group
-
             lock (m_validGroupUuids)
             {
                 if (!m_validGroupUuids.ContainsKey(uuid))
@@ -684,7 +762,21 @@ namespace OpenSim.Region.CoreModules.World.Archiver
                 sbyte assetType = ArchiveConstants.EXTENSION_TO_ASSET_TYPE[extension];
 
                 if (assetType == (sbyte)AssetType.Unknown)
+                {
                     m_log.WarnFormat("[ARCHIVER]: Importing {0} byte asset {1} with unknown type", data.Length, uuid);
+                }
+                else if (assetType == (sbyte)AssetType.Object)
+                {
+                    data = SceneObjectSerializer.ModifySerializedObject(UUID.Parse(uuid), data,
+                        sog =>
+                        {
+                            ModifySceneObject(m_rootScene, sog);
+                            return true;
+                        });
+                    
+                    if (data == null)
+                        return false;
+                }
 
                 //m_log.DebugFormat("[ARCHIVER]: Importing asset {0}, type {1}", uuid, assetType);
 
@@ -809,7 +901,15 @@ namespace OpenSim.Region.CoreModules.World.Archiver
             ITerrainModule terrainModule = scene.RequestModuleInterface<ITerrainModule>();
 
             MemoryStream ms = new MemoryStream(data);
-            terrainModule.LoadFromStream(terrainPath, ms);
+            if (m_displacement != Vector3.Zero || m_rotation != 0f)
+            {
+                Vector2 rotationCenter = new Vector2(m_rotationCenter.X, m_rotationCenter.Y);
+                terrainModule.LoadFromStream(terrainPath, m_displacement, m_rotation, rotationCenter, ms);
+            }
+            else
+            {
+                terrainModule.LoadFromStream(terrainPath, ms);
+            }
             ms.Close();
 
             m_log.DebugFormat("[ARCHIVER]: Restored terrain {0}", terrainPath);

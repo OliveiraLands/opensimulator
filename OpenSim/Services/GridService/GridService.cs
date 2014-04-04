@@ -313,8 +313,10 @@ namespace OpenSim.Services.GridService
             if (region != null)
             {
                 // Not really? Maybe?
-                List<RegionData> rdatas = m_Database.Get(region.posX - (int)Constants.RegionSize - 1, region.posY - (int)Constants.RegionSize - 1, 
-                    region.posX + (int)Constants.RegionSize + 1, region.posY + (int)Constants.RegionSize + 1, scopeID);
+                // The adjacent regions are presumed to be the same size as the current region
+                List<RegionData> rdatas = m_Database.Get(
+                    region.posX - region.sizeX - 1, region.posY - region.sizeY - 1, 
+                    region.posX + region.sizeX + 1, region.posY + region.sizeY + 1, scopeID);
 
                 foreach (RegionData rdata in rdatas)
                 {
@@ -347,6 +349,11 @@ namespace OpenSim.Services.GridService
             return null;
         }
 
+        // Get a region given its base coordinates.
+        // NOTE: this is NOT 'get a region by some point in the region'. The coordinate MUST
+        //     be the base coordinate of the region.
+        // The snapping is technically unnecessary but is harmless because regions are always
+        //     multiples of the legacy region size (256).
         public GridRegion GetRegionByPosition(UUID scopeID, int x, int y)
         {
             int snapX = (int)(x / Constants.RegionSize) * (int)Constants.RegionSize;
@@ -441,6 +448,8 @@ namespace OpenSim.Services.GridService
             RegionData rdata = new RegionData();
             rdata.posX = (int)rinfo.RegionLocX;
             rdata.posY = (int)rinfo.RegionLocY;
+            rdata.sizeX = rinfo.RegionSizeX;
+            rdata.sizeY = rinfo.RegionSizeY;
             rdata.RegionID = rinfo.RegionID;
             rdata.RegionName = rinfo.RegionName;
             rdata.Data = rinfo.ToKeyValuePairs();
@@ -454,6 +463,8 @@ namespace OpenSim.Services.GridService
             GridRegion rinfo = new GridRegion(rdata.Data);
             rinfo.RegionLocX = rdata.posX;
             rinfo.RegionLocY = rdata.posY;
+            rinfo.RegionSizeX = rdata.sizeX;
+            rinfo.RegionSizeY = rdata.sizeY;
             rinfo.RegionID = rdata.RegionID;
             rinfo.RegionName = rdata.RegionName;
             rinfo.ScopeID = rdata.ScopeID;
@@ -633,20 +644,20 @@ namespace OpenSim.Services.GridService
                 return;
             }
 
-            int x, y;
-            if (!int.TryParse(cmd[3], out x))
+            uint x, y;
+            if (!uint.TryParse(cmd[3], out x))
             {
                 MainConsole.Instance.Output("x-coord must be an integer");
                 return;
             }
 
-            if (!int.TryParse(cmd[4], out y))
+            if (!uint.TryParse(cmd[4], out y))
             {
                 MainConsole.Instance.Output("y-coord must be an integer");
                 return;
             }
 
-            RegionData region = m_Database.Get(x * (int)Constants.RegionSize, y * (int)Constants.RegionSize, UUID.Zero);
+            RegionData region = m_Database.Get((int)Util.RegionToWorldLoc(x), (int)Util.RegionToWorldLoc(y), UUID.Zero);
             if (region == null)
             {
                 MainConsole.Instance.OutputFormat("No region found at {0},{1}", x, y);

@@ -450,7 +450,7 @@ namespace OpenSim.Region.ScriptEngine.Shared.Api
         {
             m_host.AddScriptLPS(1);
 
-            if (x > ((int)Constants.RegionSize - 1) || x < 0 || y > ((int)Constants.RegionSize - 1) || y < 0)
+            if (x > (World.RegionInfo.RegionSizeX - 1) || x < 0 || y > (World.RegionInfo.RegionSizeY - 1) || y < 0)
                 OSSLError("osSetTerrainHeight: Coordinate out of bounds");
 
             if (World.Permissions.CanTerraformLand(m_host.OwnerID, new Vector3(x, y, 0)))
@@ -480,7 +480,7 @@ namespace OpenSim.Region.ScriptEngine.Shared.Api
         private LSL_Float GetTerrainHeight(int x, int y)
         {
             m_host.AddScriptLPS(1);
-            if (x > ((int)Constants.RegionSize - 1) || x < 0 || y > ((int)Constants.RegionSize - 1) || y < 0)
+            if (x > (World.RegionInfo.RegionSizeX - 1) || x < 0 || y > (World.RegionInfo.RegionSizeY - 1) || y < 0)
                 OSSLError("osGetTerrainHeight: Coordinate out of bounds");
 
             return World.Heightmap[x, y];
@@ -814,7 +814,8 @@ namespace OpenSim.Region.ScriptEngine.Shared.Api
         private void TeleportAgent(string agent, int regionX, int regionY,
             LSL_Types.Vector3 position, LSL_Types.Vector3 lookat, bool relaxRestrictions)
         {
-            ulong regionHandle = Util.UIntsToLong(((uint)regionX * (uint)Constants.RegionSize), ((uint)regionY * (uint)Constants.RegionSize));
+            // ulong regionHandle = Util.UIntsToLong(((uint)regionX * (uint)Constants.RegionSize), ((uint)regionY * (uint)Constants.RegionSize));
+            ulong regionHandle = Util.RegionLocToHandle((uint)regionX, (uint)regionY);
 
             m_host.AddScriptLPS(1);
             UUID agentId = new UUID();
@@ -2329,6 +2330,36 @@ namespace OpenSim.Region.ScriptEngine.Shared.Api
             return retVal;
         }
 
+        public void osForceCreateLink(string target, int parent)
+        {
+            CheckThreatLevel(ThreatLevel.VeryLow, "osForceCreateLink");
+
+            m_host.AddScriptLPS(1);
+
+            InitLSL();
+            ((LSL_Api)m_LSL_Api).CreateLink(target, parent);
+        }
+
+        public void osForceBreakLink(int linknum)
+        {
+            CheckThreatLevel(ThreatLevel.VeryLow, "osForceBreakLink");
+
+            m_host.AddScriptLPS(1);
+
+            InitLSL();
+            ((LSL_Api)m_LSL_Api).BreakLink(linknum);
+        }
+
+        public void osForceBreakAllLinks()
+        {
+            CheckThreatLevel(ThreatLevel.VeryLow, "osForceBreakAllLinks");
+
+            m_host.AddScriptLPS(1);
+
+            InitLSL();
+            ((LSL_Api)m_LSL_Api).BreakAllLinks();
+        }
+
         public LSL_Integer osIsNpc(LSL_Key npc)
         {
             CheckThreatLevel(ThreatLevel.None, "osIsNpc");
@@ -2924,6 +2955,31 @@ namespace OpenSim.Region.ScriptEngine.Shared.Api
                 ret.Add(new LSL_Float(stats[i]));
             }
             return ret;
+        }
+
+        public LSL_Vector osGetRegionSize()
+        {
+            CheckThreatLevel(ThreatLevel.None, "osGetRegionSize");
+            m_host.AddScriptLPS(1);
+
+            bool isMegaregion;
+            IRegionCombinerModule rcMod = World.RequestModuleInterface<IRegionCombinerModule>();
+            if (rcMod != null)
+                isMegaregion = rcMod.IsRootForMegaregion(World.RegionInfo.RegionID);
+            else
+                isMegaregion = false;
+
+            if (isMegaregion)
+            {
+                Vector2 size = rcMod.GetSizeOfMegaregion(World.RegionInfo.RegionID);
+                return new LSL_Vector(size.X, size.Y, Constants.RegionHeight);
+            }
+            else
+            {
+                Scene scene = m_ScriptEngine.World;
+                GridRegion region = scene.GridService.GetRegionByUUID(UUID.Zero, World.RegionInfo.RegionID);
+                return new LSL_Vector((float)region.RegionSizeX, (float)region.RegionSizeX, Constants.RegionHeight);
+            }
         }
 
         public int osGetSimulatorMemory()

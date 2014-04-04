@@ -48,6 +48,7 @@ namespace OpenSim.Data.MySQL
     public class MySQLSimulationData : ISimulationDataStore
     {
         private static readonly ILog m_log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
+        private static string LogHeader = "[REGION DB MYSQL]";
 
         private string m_connectionString;
         private object m_dbLock = new object();
@@ -91,7 +92,7 @@ namespace OpenSim.Data.MySQL
             }
             catch (Exception e)
             {
-                m_log.Error("[REGION DB]: MySQL error in ExecuteReader: " + e.Message);
+                m_log.ErrorFormat("{0} MySQL error in ExecuteReader: {1}", LogHeader, e);
                 throw;
             }
 
@@ -572,10 +573,14 @@ namespace OpenSim.Data.MySQL
             }
         }
 
+        // Legacy entry point for when terrain was always a 256x256 hieghtmap
         public void StoreTerrain(double[,] ter, UUID regionID)
         {
-            m_log.Info("[REGION DB]: Storing terrain");
+            StoreTerrain(new HeightmapTerrainData(ter), regionID);
+        }
 
+        public void StoreTerrain(TerrainData terrData, UUID regionID)
+        {
             lock (m_dbLock)
             {
                 using (MySqlConnection dbcon = new MySqlConnection(m_connectionString))
@@ -589,11 +594,18 @@ namespace OpenSim.Data.MySQL
 
                         ExecuteNonQuery(cmd);
 
-                        cmd.CommandText = "insert into terrain (RegionUUID, " +
-                            "Revision, Heightfield) values (?RegionUUID, " +
-                            "1, ?Heightfield)";
- 
-                        cmd.Parameters.AddWithValue("Heightfield", SerializeTerrain(ter));
+                        int terrainDBRevision;
+                        Array terrainDBblob;
+                        terrData.GetDatabaseBlob(out terrainDBRevision, out terrainDBblob);
+
+                        m_log.InfoFormat("{0} Storing terrain. X={1}, Y={2}, rev={3}",
+                                    LogHeader, terrData.SizeX, terrData.SizeY, terrainDBRevision);
+
+                        cmd.CommandText = "insert into terrain (RegionUUID, Revision, Heightfield)"
+                        +   "values (?RegionUUID, ?Revision, ?Heightfield)";
+
+                        cmd.Parameters.AddWithValue("Revision", terrainDBRevision);
+                        cmd.Parameters.AddWithValue("Heightfield", terrainDBblob);
 
                         ExecuteNonQuery(cmd);
                     }
@@ -601,9 +613,20 @@ namespace OpenSim.Data.MySQL
             }
         }
 
+        // Legacy region loading
         public double[,] LoadTerrain(UUID regionID)
         {
-            double[,] terrain = null;
+            double[,] ret = null;
+            TerrainData terrData = LoadTerrain(regionID, (int)Constants.RegionSize, (int)Constants.RegionSize, (int)Constants.RegionHeight);
+            if (terrData != null)
+                ret = terrData.GetDoubles();
+            return ret;
+        }
+
+        // Returns 'null' if region not found
+        public TerrainData LoadTerrain(UUID regionID, int pSizeX, int pSizeY, int pSizeZ)
+        {
+            TerrainData terrData = null;
 
             lock (m_dbLock)
             {
@@ -623,32 +646,15 @@ namespace OpenSim.Data.MySQL
                             while (reader.Read())
                             {
                                 int rev = Convert.ToInt32(reader["Revision"]);
-
-                                terrain = new double[(int)Constants.RegionSize, (int)Constants.RegionSize];
-                                terrain.Initialize();
-
-                                using (MemoryStream mstr = new MemoryStream((byte[])reader["Heightfield"]))
-                                {
-                                    using (BinaryReader br = new BinaryReader(mstr))
-                                    {
-                                        for (int x = 0; x < (int)Constants.RegionSize; x++)
-                                        {
-                                            for (int y = 0; y < (int)Constants.RegionSize; y++)
-                                            {
-                                                terrain[x, y] = br.ReadDouble();
-                                            }
-                                        }
-                                    }
-
-                                    m_log.InfoFormat("[REGION DB]: Loaded terrain revision r{0}", rev);
-                                }
+                                byte[] blob = (byte[])reader["Heightfield"];
+                                terrData = TerrainData.CreateFromDatabaseBlobFactory(pSizeX, pSizeY, pSizeZ, rev, blob);
                             }
                         }
                     }
                 }
             }
 
-            return terrain;
+            return terrData;
         }
 
         public void RemoveLandObject(UUID globalID)
@@ -689,7 +695,7 @@ namespace OpenSim.Data.MySQL
                             "MusicURL, PassHours, PassPrice, SnapshotUUID, " +
                             "UserLocationX, UserLocationY, UserLocationZ, " +
                             "UserLookAtX, UserLookAtY, UserLookAtZ, " +
-                            "AuthbuyerID, OtherCleanTime, MediaType, MediaDescription, " +
+                            "AuthbuyerID, OtherCleanTime, Dwell, MediaType, MediaDescription, " +
                             "MediaSize, MediaLoop, ObscureMusic, ObscureMedia) values (" +
                             "?UUID, ?RegionUUID, " +
                             "?LocalLandID, ?Bitmap, ?Name, ?Description, " +
@@ -700,7 +706,7 @@ namespace OpenSim.Data.MySQL
                             "?MusicURL, ?PassHours, ?PassPrice, ?SnapshotUUID, " +
                             "?UserLocationX, ?UserLocationY, ?UserLocationZ, " +
                             "?UserLookAtX, ?UserLookAtY, ?UserLookAtZ, " +
-                            "?AuthbuyerID, ?OtherCleanTime, ?MediaType, ?MediaDescription, "+
+                            "?AuthbuyerID, ?OtherCleanTime, ?Dwell, ?MediaType, ?MediaDescription, "+
                             "CONCAT(?MediaWidth, ',', ?MediaHeight), ?MediaLoop, ?ObscureMusic, ?ObscureMedia)";
 
                         FillLandCommand(cmd, parcel.LandData, parcel.RegionUUID);
@@ -1478,6 +1484,7 @@ namespace OpenSim.Data.MySQL
             UUID.TryParse((string)row["AuthBuyerID"], out authedbuyer);
             UUID.TryParse((string)row["SnapshotUUID"], out snapshotID);
             newData.OtherCleanTime = Convert.ToInt32(row["OtherCleanTime"]);
+            newData.Dwell = Convert.ToSingle(row["Dwell"]);
 
             newData.AuthBuyerID = authedbuyer;
             newData.SnapshotID = snapshotID;
@@ -1522,30 +1529,6 @@ namespace OpenSim.Data.MySQL
             entry.Flags = (AccessList) Convert.ToInt32(row["Flags"]);
             entry.Expires = Convert.ToInt32(row["Expires"]);
             return entry;
-        }
-
-        /// <summary>
-        ///
-        /// </summary>
-        /// <param name="val"></param>
-        /// <returns></returns>
-        private static Array SerializeTerrain(double[,] val)
-        {
-            MemoryStream str = new MemoryStream(((int)Constants.RegionSize * (int)Constants.RegionSize) *sizeof (double));
-            BinaryWriter bw = new BinaryWriter(str);
-
-            // TODO: COMPATIBILITY - Add byte-order conversions
-            for (int x = 0; x < (int)Constants.RegionSize; x++)
-                for (int y = 0; y < (int)Constants.RegionSize; y++)
-                {
-                    double height = val[x, y];
-                    if (height == 0.0)
-                        height = double.Epsilon;
-
-                    bw.Write(height);
-                }
-
-            return str.ToArray();
         }
 
         /// <summary>
@@ -1833,6 +1816,7 @@ namespace OpenSim.Data.MySQL
             cmd.Parameters.AddWithValue("UserLookAtZ", land.UserLookAt.Z);
             cmd.Parameters.AddWithValue("AuthBuyerID", land.AuthBuyerID);
             cmd.Parameters.AddWithValue("OtherCleanTime", land.OtherCleanTime);
+            cmd.Parameters.AddWithValue("Dwell", land.Dwell);
             cmd.Parameters.AddWithValue("MediaDescription", land.MediaDescription);
             cmd.Parameters.AddWithValue("MediaType", land.MediaType);
             cmd.Parameters.AddWithValue("MediaWidth", land.MediaWidth);
@@ -1840,7 +1824,6 @@ namespace OpenSim.Data.MySQL
             cmd.Parameters.AddWithValue("MediaLoop", land.MediaLoop);
             cmd.Parameters.AddWithValue("ObscureMusic", land.ObscureMusic);
             cmd.Parameters.AddWithValue("ObscureMedia", land.ObscureMedia);
-
         }
 
         /// <summary>

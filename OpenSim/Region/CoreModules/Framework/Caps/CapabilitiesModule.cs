@@ -137,6 +137,10 @@ namespace OpenSim.Region.CoreModules.Framework
                     //    agentId, m_scene.RegionInfo.RegionName, oldCaps.CapsObjectPath, capsObjectPath);
                 }
 
+//                m_log.DebugFormat(
+//                    "[CAPS]: Adding capabilities for agent {0} in {1} with path {2}",
+//                    agentId, m_scene.RegionInfo.RegionName, capsObjectPath);
+
                 caps = new Caps(MainServer.Instance, m_scene.RegionInfo.ExternalHostName,
                         (MainServer.Instance == null) ? 0: MainServer.Instance.Port,
                         capsObjectPath, agentId, m_scene.RegionInfo.RegionName);
@@ -269,9 +273,7 @@ namespace OpenSim.Region.CoreModules.Framework
                 foreach (KeyValuePair<ulong, string> kvp in m_childrenSeeds[agentID])
                 {
                     uint x, y;
-                    Utils.LongToUInts(kvp.Key, out x, out y);
-                    x = x / Constants.RegionSize;
-                    y = y / Constants.RegionSize;
+                    Util.RegionHandleToRegionLoc(kvp.Key, out x, out y);
                     m_log.Info(" >> "+x+", "+y+": "+kvp.Value);
                 }
             }

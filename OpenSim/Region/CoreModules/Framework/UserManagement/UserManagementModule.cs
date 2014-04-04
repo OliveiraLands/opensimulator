@@ -278,7 +278,8 @@ namespace OpenSim.Region.CoreModules.Framework.UserManagement
             {
                 foreach (UserData data in m_UserCache.Values)
                 {
-                    if (users.Find(delegate(UserData d) { return d.Id == data.Id; }) == null &&
+                    if (data.Id != UUID.Zero &&
+                        users.Find(delegate(UserData d) { return d.Id == data.Id; }) == null &&
                         (data.FirstName.ToLower().StartsWith(query.ToLower()) || data.LastName.ToLower().StartsWith(query.ToLower())))
                         users.Add(data);
                 }
@@ -473,7 +474,16 @@ namespace OpenSim.Region.CoreModules.Framework.UserManagement
                     //    serverType, userdata.HomeURL, userID);
 
                     UserAgentServiceConnector uConn = new UserAgentServiceConnector(userdata.HomeURL);
-                    userdata.ServerURLs = uConn.GetServerURLs(userID);
+                    try
+                    {
+                        userdata.ServerURLs = uConn.GetServerURLs(userID);
+                    }
+                    catch (Exception e)
+                    {
+                        m_log.Debug("[USER MANAGEMENT MODULE]: GetServerURLs call failed ", e);
+                        userdata.ServerURLs = new Dictionary<string, object>();
+                    }
+                    
                     if (userdata.ServerURLs != null && userdata.ServerURLs.ContainsKey(serverType) && userdata.ServerURLs[serverType] != null)
                         return userdata.ServerURLs[serverType].ToString();
                 }

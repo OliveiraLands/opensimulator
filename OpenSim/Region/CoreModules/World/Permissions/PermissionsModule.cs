@@ -27,6 +27,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using log4net;
 using Nini.Config;
@@ -160,7 +161,7 @@ namespace OpenSim.Region.CoreModules.World.Permissions
             string permissionModules = Util.GetConfigVarFromSections<string>(config, "permissionmodules",
                 new string[] { "Startup", "Permissions" }, "DefaultPermissionsModule");
 
-            List<string> modules = new List<string>(permissionModules.Split(','));
+            List<string> modules = new List<string>(permissionModules.Split(',').Select(m => m.Trim()));
 
             if (!modules.Contains("DefaultPermissionsModule"))
                 return;
@@ -1571,10 +1572,10 @@ namespace OpenSim.Region.CoreModules.World.Permissions
             float X = position.X;
             float Y = position.Y;
 
-            if (X > ((int)Constants.RegionSize - 1))
-                X = ((int)Constants.RegionSize - 1);
-            if (Y > ((int)Constants.RegionSize - 1))
-                Y = ((int)Constants.RegionSize - 1);
+            if (X > ((int)m_scene.RegionInfo.RegionSizeX - 1))
+                X = ((int)m_scene.RegionInfo.RegionSizeX - 1);
+            if (Y > ((int)m_scene.RegionInfo.RegionSizeY - 1))
+                Y = ((int)m_scene.RegionInfo.RegionSizeY - 1);
             if (X < 0)
                 X = 0;
             if (Y < 0)

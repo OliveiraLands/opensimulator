@@ -1,5 +1,4 @@
-   <<<>>>>The following people have contributed to OpenSim (Thank you 
-for your effort!) 
+The following people have contributed to OpenSim (Thank you for your effort!) 
 
 = Current OpenSim Developers (in very rough order of appearance) =
 These folks represent the current core team for OpenSim, and are the
@@ -17,6 +16,8 @@ people that make the day to day of OpenSim happen.
 * Nebadon Izumi (Michael Cerquoni, OSgrid)
 * Snoopy Pfeffer
 * Robert Adams (Intel)
+* Oren Hurvitz (Kitely)
+* Kevin Cozens
 
 = Core Developers Following the White Rabbit =
 Core developers who have temporarily (we hope) gone chasing the white rabbit. 
@@ -61,8 +62,9 @@ where we are today.
 These folks have contributed code patches or content to OpenSimulator to help make it
 what it is today.  
 
-* aduffy70
 * A_Biondi
+* aduffy70
+* Ai Austin
 * alex_carnell
 * Alan Webb (IBM)
 * Aleric
@@ -75,6 +77,7 @@ what it is today.
 * Chris Yeoh (IBM)
 * controlbreak
 * coyled
+* ctrlaltdavid (David Rowe)
 * Daedius
 * daTwitch 
 * devalnor-#708
@@ -96,10 +99,12 @@ what it is today.
 * Flyte Xevious
 * Garmin Kawaguichi
 * Gryc Ueusp
+* H-H-H (ginge264)
 * Hiro Lecker
 * Iain Oliver
 * Imaze Rhiano
 * Intimidated
+* Jak Daniels
 * Jeremy Bongio (IBM)
 * jhurliman
 * John R Sohn (XenReborn)
@@ -107,13 +112,14 @@ what it is today.
 * Jon Cundill
 * Junta Kohime
 * Kayne
-* Kevin Cozens
 * kinoc (Daxtron Labs)
 * Kira
 * Kitto Flora
 * KittyLiu
 * Kurt Taylor (IBM)
+* Lani Global
 * lkalif
+* LuciusSirnah
 * lulurun 
 * M.Igarashi
 * maimedleech
@@ -135,7 +141,6 @@ what it is today.
 * nornalbion
 * Omar Vera Ustariz (IBM)
 * openlifegrid.com
-* Oren Hurvitz (Kitely)
 * otakup0pe
 * Pixel Tomsen
 * ralphos
@@ -144,6 +149,7 @@ what it is today.
 * Richard Alimi (IBM)
 * Rick Alther (IBM)
 * Rob Smart (IBM)
+* Roger Kirkman (zadark)
 * rtomita
 * Ruud Lathorp
 * SachaMagne
@@ -172,22 +178,17 @@ what it is today.
 * Zha Ewry
 * ziah
 
-
 = LSL Devs =
-
 * Alondria
 * CharlieO
 * Tedd
 * Melanie Thielker
 
-
 = Testers =
-
 * Ai Austin
 * CharlieO (LSL)
 * Ckrinke
 * openlifegrid.com
-
 
 This software uses components from the following developers:
 * Sleepycat Software (Berkeley DB)
