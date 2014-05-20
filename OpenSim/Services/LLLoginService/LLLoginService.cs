@@ -688,8 +688,7 @@ namespace OpenSim.Services.LLLoginService
                             if (parts.Length > 1)
                                 UInt32.TryParse(parts[1], out port);
 
-//                            GridRegion region = FindForeignRegion(domainName, port, regionName, out gatekeeper);
-                            region = FindForeignRegion(domainName, port, regionName, out gatekeeper);
+                            region = FindForeignRegion(domainName, port, regionName, account, out gatekeeper);
                             return region;
                         }
                     }
@@ -738,7 +737,7 @@ namespace OpenSim.Services.LLLoginService
             return null;
         }
 
-        private GridRegion FindForeignRegion(string domainName, uint port, string regionName, out GridRegion gatekeeper)
+        private GridRegion FindForeignRegion(string domainName, uint port, string regionName, UserAccount account, out GridRegion gatekeeper)
         {
             m_log.Debug("[LLLOGIN SERVICE]: attempting to findforeignregion " + domainName + ":" + port.ToString() + ":" + regionName);
             gatekeeper = new GridRegion();
@@ -753,7 +752,11 @@ namespace OpenSim.Services.LLLoginService
             string message;
             if (m_GatekeeperConnector.LinkRegion(gatekeeper, out regionID, out handle, out domainName, out imageURL, out reason))
             {
-                GridRegion destination = m_GatekeeperConnector.GetHyperlinkRegion(gatekeeper, regionID, out message);
+                string homeURI = null;
+                if (account.ServiceURLs != null && account.ServiceURLs.ContainsKey("HomeURI"))
+                    homeURI = (string)account.ServiceURLs["HomeURI"];
+                
+                GridRegion destination = m_GatekeeperConnector.GetHyperlinkRegion(gatekeeper, regionID, account.PrincipalID, homeURI, out message);
                 return destination;
             }
 
@@ -902,13 +905,6 @@ namespace OpenSim.Services.LLLoginService
             SetServiceURLs(aCircuit, account);
 
             return aCircuit;
-
-            //m_UserAgentService.LoginAgentToGrid(aCircuit, GatekeeperServiceConnector, region, out reason);
-            //if (simConnector.CreateAgent(region, aCircuit, 0, out reason))
-            //    return aCircuit;
-
-            //return null;
-
         }
 
         private void SetServiceURLs(AgentCircuitData aCircuit, UserAccount account)
@@ -943,7 +939,7 @@ namespace OpenSim.Services.LLLoginService
                     if (!keyValue.EndsWith("/"))
                         keyValue = keyValue + "/";
 
-                    if (!account.ServiceURLs.ContainsKey(keyName) || (account.ServiceURLs.ContainsKey(keyName) && account.ServiceURLs[keyName] != keyValue))
+                    if (!account.ServiceURLs.ContainsKey(keyName) || (account.ServiceURLs.ContainsKey(keyName) && (string)account.ServiceURLs[keyName] != keyValue))
                     {
                         account.ServiceURLs[keyName] = keyValue;
                         newUrls = true;
@@ -963,13 +959,13 @@ namespace OpenSim.Services.LLLoginService
 
         private bool LaunchAgentDirectly(ISimulationService simConnector, GridRegion region, AgentCircuitData aCircuit, TeleportFlags flags, out string reason)
         {
-            return simConnector.CreateAgent(region, aCircuit, (uint)flags, out reason);
+            return simConnector.CreateAgent(null, region, aCircuit, (uint)flags, out reason);
         }
 
         private bool LaunchAgentIndirectly(GridRegion gatekeeper, GridRegion destination, AgentCircuitData aCircuit, IPEndPoint clientIP, out string reason)
         {
             m_log.Debug("[LLOGIN SERVICE] Launching agent at " + destination.RegionName);
-            if (m_UserAgentService.LoginAgentToGrid(aCircuit, gatekeeper, destination, true, out reason))
+            if (m_UserAgentService.LoginAgentToGrid(null, aCircuit, gatekeeper, destination, true, out reason))
                 return true;
             return false;
         }

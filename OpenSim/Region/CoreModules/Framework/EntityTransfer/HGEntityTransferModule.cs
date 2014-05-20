@@ -53,7 +53,6 @@ namespace OpenSim.Region.CoreModules.Framework.EntityTransfer
         private static readonly ILog m_log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
 
         private int m_levelHGTeleport = 0;
-        private string m_ThisHomeURI;
 
         private GatekeeperServiceConnector m_GatekeeperConnector;
         private IUserAgentService m_UAS;
@@ -145,14 +144,6 @@ namespace OpenSim.Region.CoreModules.Framework.EntityTransfer
                     m_log.DebugFormat("[HG ENTITY TRANSFER MODULE]: {0} enabled.", Name);
                 }
             }
-
-            moduleConfig = source.Configs["Hypergrid"];
-            if (moduleConfig != null)
-            {
-                m_ThisHomeURI = moduleConfig.GetString("HomeURI", string.Empty);
-                if (m_ThisHomeURI != string.Empty && !m_ThisHomeURI.EndsWith("/"))
-                    m_ThisHomeURI += '/';
-            }
         }
 
         public override void AddRegion(Scene scene)
@@ -225,7 +216,7 @@ namespace OpenSim.Region.CoreModules.Framework.EntityTransfer
 
         #region HG overrides of IEntiryTransferModule
 
-        protected override GridRegion GetFinalDestination(GridRegion region, out string message)
+        protected override GridRegion GetFinalDestination(GridRegion region, UUID agentID, string agentHomeURI, out string message)
         {
             int flags = Scene.GridService.GetRegionFlags(Scene.RegionInfo.ScopeID, region.RegionID);
             m_log.DebugFormat("[HG ENTITY TRANSFER MODULE]: region {0} flags: {1}", region.RegionName, flags);
@@ -234,7 +225,7 @@ namespace OpenSim.Region.CoreModules.Framework.EntityTransfer
             if ((flags & (int)OpenSim.Framework.RegionFlags.Hyperlink) != 0)
             {
                 m_log.DebugFormat("[HG ENTITY TRANSFER MODULE]: Destination region is hyperlink");
-                GridRegion real_destination = m_GatekeeperConnector.GetHyperlinkRegion(region, region.RegionID, out message);
+                GridRegion real_destination = m_GatekeeperConnector.GetHyperlinkRegion(region, region.RegionID, agentID, agentHomeURI, out message);
                 if (real_destination != null)
                     m_log.DebugFormat("[HG ENTITY TRANSFER MODULE]: GetFinalDestination: ServerURI={0}", real_destination.ServerURI);
                 else
@@ -296,7 +287,10 @@ namespace OpenSim.Region.CoreModules.Framework.EntityTransfer
                     else
                         connector = new UserAgentServiceConnector(userAgentDriver);
 
-                    bool success = connector.LoginAgentToGrid(agentCircuit, reg, finalDestination, false, out reason);
+                    GridRegion source = new GridRegion(Scene.RegionInfo);
+                    source.RawServerURI = m_GatekeeperURI;
+                    
+                    bool success = connector.LoginAgentToGrid(source, agentCircuit, reg, finalDestination, false, out reason);
                     logout = success; // flag for later logout from this grid; this is an HG TP
 
                     if (success)
@@ -432,7 +426,7 @@ namespace OpenSim.Region.CoreModules.Framework.EntityTransfer
         //    return base.UpdateAgent(reg, finalDestination, agentData, sp);
         //}
 
-        public virtual void TriggerTeleportHome(UUID id, IClientAPI client)     
+        public override void TriggerTeleportHome(UUID id, IClientAPI client)     
         {                                                                       
             TeleportHome(id, client);                                           
         }                                                                       
@@ -524,8 +518,6 @@ namespace OpenSim.Region.CoreModules.Framework.EntityTransfer
             {
                 ((Scene)(remoteClient.Scene)).RequestTeleportLocation(remoteClient, info.RegionHandle, lm.Position,
                     Vector3.Zero, (uint)(Constants.TeleportFlags.SetLastToTarget | Constants.TeleportFlags.ViaLandmark));
-
-                return;
             }
             else 
             {
@@ -534,8 +526,10 @@ namespace OpenSim.Region.CoreModules.Framework.EntityTransfer
                 GatekeeperServiceConnector gConn = new GatekeeperServiceConnector();
                 GridRegion gatekeeper = new GridRegion();
                 gatekeeper.ServerURI = lm.Gatekeeper;
+                string homeURI = Scene.GetAgentHomeURI(remoteClient.AgentId);
+
                 string message;
-                GridRegion finalDestination = gConn.GetHyperlinkRegion(gatekeeper, new UUID(lm.RegionID), out message);
+                GridRegion finalDestination = gConn.GetHyperlinkRegion(gatekeeper, new UUID(lm.RegionID), remoteClient.AgentId, homeURI, out message);
 
                 if (finalDestination != null)
                 {
@@ -555,13 +549,9 @@ namespace OpenSim.Region.CoreModules.Framework.EntityTransfer
                 else
                 {
                     remoteClient.SendTeleportFailed(message);
-                    return;
                 }
 
             }
-
-            // can't find the region: Tell viewer and abort
-            remoteClient.SendTeleportFailed("The teleport destination could not be found.");
         }
 
         #endregion

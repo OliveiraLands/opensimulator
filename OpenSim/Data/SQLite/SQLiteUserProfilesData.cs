@@ -50,7 +50,6 @@ namespace OpenSim.Data.SQLite
         private SqliteConnection m_connection;
         private string m_connectionString;
         
-        private FieldInfo[] m_Fields;
         private Dictionary<string, FieldInfo> m_FieldMap =
             new Dictionary<string, FieldInfo>();
         
@@ -585,9 +584,6 @@ namespace OpenSim.Data.SQLite
                     }
                         if(reader != null && reader.Read())
                         {
-                            m_log.DebugFormat("[PROFILES_DATA]" +
-                                              ": Getting data for {0}.", props.UserId);
-
                             props.WebUrl = (string)reader["profileURL"];
                             UUID.TryParse((string)reader["profileImage"], out props.ImageId);
                             props.AboutText = (string)reader["profileAboutText"];
@@ -602,9 +598,6 @@ namespace OpenSim.Data.SQLite
                         }
                         else
                         {
-                            m_log.DebugFormat("[PROFILES_DATA]" +
-                                              ": No data for {0}", props.UserId);
-                            
                             props.WebUrl = string.Empty;
                             props.ImageId = UUID.Zero;
                             props.AboutText = string.Empty;

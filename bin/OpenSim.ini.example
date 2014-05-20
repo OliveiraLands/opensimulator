@@ -204,11 +204,12 @@
     ; meshing = ZeroMesher
 
     ;; Choose one of the physics engines below
-    ;# {physics} {} {Select physics engine} {OpenDynamicsEngine BulletSim basicphysics POS} OpenDynamicsEngine
-    ;; OpenDynamicsEngine is by some distance the most developed physics engine
-    ;; BulletSim is experimental and in active development.
-    ;; basicphysics effectively does not model physics at all, making all
-    ;; objects phantom.   
+    ;# {physics} {} {Select physics engine} {OpenDynamicsEngine BulletSim basicphysics POS} BulletSim
+    ;; BulletSim is the default physics engine.  It provides the best performance and most functionality.
+    ;; BulletSim supports varregions.
+    ;; OpenDynamicsEngine was the previous default physics engine in OpenSimulator 0.7.6.1 and before.  
+    ;; It continues to provide a workable physics implementation.  It does not currently support varregions.
+    ;; basicphysics effectively does not model physics at all, making all objects phantom.   
     ;; Default is OpenDynamicsEngine
     ; physics = OpenDynamicsEngine
     ; physics = BulletSim
@@ -996,6 +997,10 @@
     ;; Used for V2 in HG only. If standalone, set this to local; if grided sim, set this to remote
     ; LocalService = local
 
+    ;# {SecretKey} {ServicesConnectorModule:Groups Remote Service Connector} {Secret key between sim and remote group service} {} ""
+    ;; Used for V2 in Remote only. 
+    ; SecretKey = ""
+
     ;# {GroupsServerURI} {Module:GroupsModule (ServicesConnectorModule:Groups Remote Service Connector or (ServicesConnectorModule:Groups HG Service Connector and LocalService:remote))} {Groups Server URI} {}
     ;; URI for the groups services of this grid
     ;; e.g. http://yourxmlrpcserver.com/xmlrpc.php for Flotsam XmlRpc
@@ -1028,8 +1033,11 @@
     ; Applies Flotsam Group only. V2 has this always on, no other option
     ; MessageOnlineUsersOnly = false
 
-    ;; This makes the Groups modules very chatty on the console.
+    ;; This makes the Group module very chatty on the console.
     ; DebugEnabled = false
+
+    ; This makes the Group Messaging module very chatty on the console.
+    ; DebugMessagingEnabled = false
 
     ;; XmlRpc Security settings.  These must match those set on your backend
     ;; groups service if the service is using these keys

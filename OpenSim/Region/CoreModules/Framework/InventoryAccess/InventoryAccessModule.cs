@@ -203,7 +203,7 @@ namespace OpenSim.Region.CoreModules.Framework.InventoryAccess
                     m_Scene.AssetService.Store(asset);
                     m_Scene.CreateNewInventoryItem(
                         remoteClient, remoteClient.AgentId.ToString(), string.Empty, folderID,
-                        name, description, 0, callbackID, asset, invType, nextOwnerMask, creationDate);
+                        name, description, 0, callbackID, asset.FullID, asset.Type, invType, nextOwnerMask, creationDate);
                 }
                 else
                 {
@@ -773,12 +773,14 @@ namespace OpenSim.Region.CoreModules.Framework.InventoryAccess
                     m_log.WarnFormat(
                         "[InventoryAccessModule]: Could not find asset {0} for item {1} {2} for {3} in RezObject()",
                         assetID, item.Name, item.ID, remoteClient.Name);
+                    remoteClient.SendAgentAlertMessage(string.Format("Unable to rez: could not find asset {0} for item {1}.", assetID, item.Name), false);
                 }
                 else
                 {
                     m_log.WarnFormat(
                         "[INVENTORY ACCESS MODULE]: Could not find asset {0} for {1} in RezObject()",
                         assetID, remoteClient.Name);
+                    remoteClient.SendAgentAlertMessage(string.Format("Unable to rez: could not find asset {0}.", assetID), false);
                 }
 
                 return null;

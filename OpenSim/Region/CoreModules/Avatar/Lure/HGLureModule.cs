@@ -239,8 +239,10 @@ namespace OpenSim.Region.CoreModules.Avatar.Lure
                         GatekeeperServiceConnector gConn = new GatekeeperServiceConnector();
                         GridRegion gatekeeper = new GridRegion();
                         gatekeeper.ServerURI = url;
+                        string homeURI = scene.GetAgentHomeURI(client.AgentId);
+
                         string message;
-                        GridRegion finalDestination = gConn.GetHyperlinkRegion(gatekeeper, new UUID(im.RegionID), out message);
+                        GridRegion finalDestination = gConn.GetHyperlinkRegion(gatekeeper, new UUID(im.RegionID), client.AgentId, homeURI, out message);
                         if (finalDestination != null)
                         {
                             ScenePresence sp = scene.GetScenePresence(client.AgentId);

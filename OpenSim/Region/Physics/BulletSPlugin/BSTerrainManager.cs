@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) Contributors, http://opensimulator.org/
  * See CONTRIBUTORS.TXT for a full list of copyright holders.
  *
@@ -137,8 +137,9 @@ public sealed class BSTerrainManager : IDisposable
         DetailLog("{0},BSTerrainManager.CreateInitialGroundPlaneAndTerrain,region={1}", BSScene.DetailLogZero, m_physicsScene.RegionName);
         // The ground plane is here to catch things that are trying to drop to negative infinity
         BulletShape groundPlaneShape = m_physicsScene.PE.CreateGroundPlaneShape(BSScene.GROUNDPLANE_ID, 1f, BSParam.TerrainCollisionMargin);
+        Vector3 groundPlaneAltitude = new Vector3(0f, 0f, BSParam.TerrainGroundPlane);
         m_groundPlane = m_physicsScene.PE.CreateBodyWithDefaultMotionState(groundPlaneShape,
-                                        BSScene.GROUNDPLANE_ID, Vector3.Zero, Quaternion.Identity);
+                                        BSScene.GROUNDPLANE_ID, groundPlaneAltitude, Quaternion.Identity);
 
         // Everything collides with the ground plane.
         m_groundPlane.collisionType = CollisionType.Groundplane;
@@ -239,9 +240,6 @@ public sealed class BSTerrainManager : IDisposable
     // Called during taint-time.
     private void UpdateTerrain(uint id, float[] heightMap, Vector3 minCoords, Vector3 maxCoords)
     {
-        DetailLog("{0},BSTerrainManager.UpdateTerrain,call,id={1},minC={2},maxC={3}",
-                            BSScene.DetailLogZero, id, minCoords, maxCoords);
-
         // Find high and low points of passed heightmap.
         // The min and max passed in is usually the area objects can be in (maximum
         //     object height, for instance). The terrain wants the bounding box for the
@@ -261,6 +259,9 @@ public sealed class BSTerrainManager : IDisposable
         minCoords.Z = minZ;
         maxCoords.Z = maxZ;
 
+        DetailLog("{0},BSTerrainManager.UpdateTerrain,call,id={1},minC={2},maxC={3}",
+                            BSScene.DetailLogZero, id, minCoords, maxCoords);
+
         Vector3 terrainRegionBase = new Vector3(minCoords.X, minCoords.Y, 0f);
 
         lock (m_terrains)
@@ -269,7 +270,7 @@ public sealed class BSTerrainManager : IDisposable
             if (m_terrains.TryGetValue(terrainRegionBase, out terrainPhys))
             {
                 // There is already a terrain in this spot. Free the old and build the new.
-                DetailLog("{0},BSTErrainManager.UpdateTerrain:UpdateExisting,call,id={1},base={2},minC={3},maxC={4}",
+                DetailLog("{0},BSTerrainManager.UpdateTerrain:UpdateExisting,call,id={1},base={2},minC={3},maxC={4}",
                                 BSScene.DetailLogZero, id, terrainRegionBase, minCoords, maxCoords);
 
                 // Remove old terrain from the collection

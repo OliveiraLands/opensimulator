@@ -79,22 +79,32 @@ namespace OpenSim.Services.Connectors.Simulation
             return "agent/";
         }
 
-        protected virtual void PackData(OSDMap args, AgentCircuitData aCircuit, GridRegion destination, uint flags)
+        protected virtual void PackData(OSDMap args, GridRegion source, AgentCircuitData aCircuit, GridRegion destination, uint flags)
         {
-                args["destination_x"] = OSD.FromString(destination.RegionLocX.ToString());
-                args["destination_y"] = OSD.FromString(destination.RegionLocY.ToString());
-                args["destination_name"] = OSD.FromString(destination.RegionName);
-                args["destination_uuid"] = OSD.FromString(destination.RegionID.ToString());
-                args["teleport_flags"] = OSD.FromString(flags.ToString());
+            if (source != null)
+            {
+                args["source_x"] = OSD.FromString(source.RegionLocX.ToString());
+                args["source_y"] = OSD.FromString(source.RegionLocY.ToString());
+                args["source_name"] = OSD.FromString(source.RegionName);
+                args["source_uuid"] = OSD.FromString(source.RegionID.ToString());
+                if (!String.IsNullOrEmpty(source.RawServerURI))
+                    args["source_server_uri"] = OSD.FromString(source.RawServerURI);
+            }
+
+            args["destination_x"] = OSD.FromString(destination.RegionLocX.ToString());
+            args["destination_y"] = OSD.FromString(destination.RegionLocY.ToString());
+            args["destination_name"] = OSD.FromString(destination.RegionName);
+            args["destination_uuid"] = OSD.FromString(destination.RegionID.ToString());
+            args["teleport_flags"] = OSD.FromString(flags.ToString());
         }
 
-        public bool CreateAgent(GridRegion destination, AgentCircuitData aCircuit, uint flags, out string reason)
+        public bool CreateAgent(GridRegion source, GridRegion destination, AgentCircuitData aCircuit, uint flags, out string reason)
         {
             string tmp = String.Empty;
-            return CreateAgent(destination, aCircuit, flags, out tmp, out reason);
+            return CreateAgent(source, destination, aCircuit, flags, out tmp, out reason);
         }
 
-        public bool CreateAgent(GridRegion destination, AgentCircuitData aCircuit, uint flags, out string myipaddress, out string reason)
+        public bool CreateAgent(GridRegion source, GridRegion destination, AgentCircuitData aCircuit, uint flags, out string myipaddress, out string reason)
         {
             m_log.DebugFormat("[REMOTE SIMULATION CONNECTOR]: Creating agent at {0}", destination.ServerURI);
             reason = String.Empty;
@@ -111,7 +121,7 @@ namespace OpenSim.Services.Connectors.Simulation
             try
             {
                 OSDMap args = aCircuit.PackAgentCircuitData();
-                PackData(args, aCircuit, destination, flags);
+                PackData(args, source, aCircuit, destination, flags);
 
                 OSDMap result = WebUtil.PostToServiceCompressed(uri, args, 30000);
                 bool success = result["success"].AsBoolean();
@@ -126,7 +136,7 @@ namespace OpenSim.Services.Connectors.Simulation
                 }
               
                 // Try the old version, uncompressed
-                result = WebUtil.PostToService(uri, args, 30000);
+                result = WebUtil.PostToService(uri, args, 30000, false);
 
                 if (result["Success"].AsBoolean())
                 {
@@ -272,9 +282,7 @@ namespace OpenSim.Services.Connectors.Simulation
         }
 
 
-        /// <summary>
-        /// </summary>
-        public bool QueryAccess(GridRegion destination, UUID id, Vector3 position, out string version, out string reason)
+        public bool QueryAccess(GridRegion destination, UUID agentID, string agentHomeURI, bool viaTeleport, Vector3 position, out string version, out string reason)
         {
             reason = "Failed to contact destination";
             version = "Unknown";
@@ -285,14 +293,17 @@ namespace OpenSim.Services.Connectors.Simulation
             if (ext == null) return false;
 
             // Eventually, we want to use a caps url instead of the agentID
-            string uri = destination.ServerURI + AgentPath() + id + "/" + destination.RegionID.ToString() + "/";
+            string uri = destination.ServerURI + AgentPath() + agentID + "/" + destination.RegionID.ToString() + "/";
 
             OSDMap request = new OSDMap();
+            request.Add("viaTeleport", OSD.FromBoolean(viaTeleport));
             request.Add("position", OSD.FromString(position.ToString()));
+            if (agentHomeURI != null)
+                request.Add("agent_home_uri", OSD.FromString(agentHomeURI));
 
             try
             {
-                OSDMap result = WebUtil.ServiceOSDRequest(uri, request, "QUERYACCESS", 30000, false);
+                OSDMap result = WebUtil.ServiceOSDRequest(uri, request, "QUERYACCESS", 30000, false, false);
                 bool success = result["success"].AsBoolean();
                 if (result.ContainsKey("_Result"))
                 {
@@ -355,7 +366,7 @@ namespace OpenSim.Services.Connectors.Simulation
 
             try
             {
-                WebUtil.ServiceOSDRequest(uri, null, "DELETE", 10000, false);
+                WebUtil.ServiceOSDRequest(uri, null, "DELETE", 10000, false, false);
             }
             catch (Exception e)
             {
@@ -374,7 +385,7 @@ namespace OpenSim.Services.Connectors.Simulation
 
             try
             {
-                WebUtil.ServiceOSDRequest(uri, null, "DELETE", 10000, false);
+                WebUtil.ServiceOSDRequest(uri, null, "DELETE", 10000, false, false);
             }
             catch (Exception e)
             {
@@ -421,7 +432,7 @@ namespace OpenSim.Services.Connectors.Simulation
                 args["destination_name"] = OSD.FromString(destination.RegionName);
                 args["destination_uuid"] = OSD.FromString(destination.RegionID.ToString());
 
-                OSDMap result = WebUtil.PostToService(uri, args, 40000);
+                OSDMap result = WebUtil.PostToService(uri, args, 40000, false);
 
                 if (result == null)
                     return false;

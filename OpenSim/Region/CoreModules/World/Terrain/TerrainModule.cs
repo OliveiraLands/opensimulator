@@ -39,6 +39,7 @@ using Mono.Addins;
 
 using OpenSim.Data;
 using OpenSim.Framework;
+using OpenSim.Framework.Console;
 using OpenSim.Region.CoreModules.Framework.InterfaceCommander;
 using OpenSim.Region.CoreModules.World.Terrain.FileLoaders;
 using OpenSim.Region.CoreModules.World.Terrain.FloodBrushes;
@@ -74,8 +75,11 @@ namespace OpenSim.Region.CoreModules.World.Terrain
         #endregion
 
         private static readonly ILog m_log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
+
+#pragma warning disable 414
         private static readonly string LogHeader = "[TERRAIN MODULE]";
-        
+#pragma warning restore 414
+
         private readonly Commander m_commander = new Commander("terrain");
 
         private readonly Dictionary<StandardTerrainEffects, ITerrainFloodEffect> m_floodeffects =
@@ -948,8 +952,7 @@ namespace OpenSim.Region.CoreModules.World.Terrain
                     if (allowed)
                     {
                         StoreUndoState();
-                        m_floodeffects[(StandardTerrainEffects) action].FloodEffect(
-                            m_channel, fillArea, size);
+                        m_floodeffects[(StandardTerrainEffects) action].FloodEffect(m_channel, fillArea, size);
 
                         //revert changes outside estate limits
                         if (!god)
@@ -1079,10 +1082,8 @@ namespace OpenSim.Region.CoreModules.World.Terrain
             }
             else
             {
-                m_log.Error("Unrecognised direction - need x or y");
+                MainConsole.Instance.OutputFormat("ERROR: Unrecognised direction {0} - need x or y", direction);
             }
-
-
         }
 
         private void InterfaceRescaleTerrain(Object[] args)
@@ -1168,7 +1169,7 @@ namespace OpenSim.Region.CoreModules.World.Terrain
                     m_channel[x, y] -= (double) args[0];
         }
 
-        private void InterfaceFillTerrain(Object[] args)
+        public void InterfaceFillTerrain(Object[] args)
         {
             int x, y;
 
@@ -1201,6 +1202,21 @@ namespace OpenSim.Region.CoreModules.World.Terrain
             }
         }
 
+        private void InterfaceShow(Object[] args)
+        {
+            Vector2 point;
+
+            if (!ConsoleUtil.TryParseConsole2DVector((string)args[0], null, out point))
+            {
+                Console.WriteLine("ERROR: {0} is not a valid vector", args[0]);
+                return;
+            }
+
+            double height = m_channel[(int)point.X, (int)point.Y];
+
+            Console.WriteLine("Terrain height at {0} is {1}", point, height);
+        }
+
         private void InterfaceShowDebugStats(Object[] args)
         {
             double max = Double.MinValue;
@@ -1223,8 +1239,8 @@ namespace OpenSim.Region.CoreModules.World.Terrain
 
             double avg = sum / (m_channel.Height * m_channel.Width);
 
-            m_log.Info("Channel " + m_channel.Width + "x" + m_channel.Height);
-            m_log.Info("max/min/avg/sum: " + max + "/" + min + "/" + avg + "/" + sum);
+            MainConsole.Instance.OutputFormat("Channel {0}x{1}", m_channel.Width, m_channel.Height);
+            MainConsole.Instance.OutputFormat("max/min/avg/sum: {0}/{1}/{2}/{3}", max, min, avg, sum);
         }
 
         private void InterfaceEnableExperimentalBrushes(Object[] args)
@@ -1244,27 +1260,30 @@ namespace OpenSim.Region.CoreModules.World.Terrain
         private void InterfaceRunPluginEffect(Object[] args)
         {
             string firstArg = (string)args[0];
+
             if (firstArg == "list")
             {
-                m_log.Info("List of loaded plugins");
+                MainConsole.Instance.Output("List of loaded plugins");
                 foreach (KeyValuePair<string, ITerrainEffect> kvp in m_plugineffects)
                 {
-                    m_log.Info(kvp.Key);
+                    MainConsole.Instance.Output(kvp.Key);
                 }
                 return;
             }
+
             if (firstArg == "reload")
             {
                 LoadPlugins();
                 return;
             }
+
             if (m_plugineffects.ContainsKey(firstArg))
             {
                 m_plugineffects[firstArg].RunEffect(m_channel);
             }
             else
             {
-                m_log.Warn("No such plugin effect loaded.");
+                MainConsole.Instance.Output("WARNING: No such plugin effect {0} loaded.", firstArg);
             }
         }
 
@@ -1353,6 +1372,11 @@ namespace OpenSim.Region.CoreModules.World.Terrain
                 new Command("stats", CommandIntentions.COMMAND_STATISTICAL, InterfaceShowDebugStats,
                             "Shows some information about the regions heightmap for debugging purposes.");
 
+            Command showCommand =
+                new Command("show", CommandIntentions.COMMAND_NON_HAZARDOUS, InterfaceShow,
+                            "Shows terrain height at a given co-ordinate.");
+            showCommand.AddArgument("point", "point in <x>,<y> format with no spaces (e.g. 45,45)", "String");
+
             Command experimentalBrushesCommand =
                 new Command("newbrushes", CommandIntentions.COMMAND_HAZARDOUS, InterfaceEnableExperimentalBrushes,
                             "Enables experimental brushes which replace the standard terrain brushes. WARNING: This is a debug setting and may be removed at any time.");
@@ -1374,6 +1398,7 @@ namespace OpenSim.Region.CoreModules.World.Terrain
             m_commander.RegisterCommand("bake", bakeRegionCommand);
             m_commander.RegisterCommand("revert", revertRegionCommand);
             m_commander.RegisterCommand("newbrushes", experimentalBrushesCommand);
+            m_commander.RegisterCommand("show", showCommand);
             m_commander.RegisterCommand("stats", showDebugStatsCommand);
             m_commander.RegisterCommand("effect", pluginRunCommand);
             m_commander.RegisterCommand("flip", flipCommand);

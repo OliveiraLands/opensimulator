@@ -26,38 +26,50 @@
  */
 
 using System;
+using NUnit.Framework;
+using OpenSim.Framework;
+using OpenSim.Region.CoreModules.World.Terrain;
+using OpenSim.Region.Framework.Scenes;
+using OpenSim.Tests.Common;
 
-namespace OpenSim.Framework.Configuration.HTTP
+namespace OpenSim.Region.CoreModules.Terrain.Tests
 {
-    public class RemoteConfigSettings
+    public class TerrainModuleTests : OpenSimTestCase
     {
-        private ConfigurationMember configMember;
-
-        public string baseConfigURL = String.Empty;
-
-        public RemoteConfigSettings(string filename)
+        [Test]
+        public void TestTerrainFill()
         {
-            configMember =
-                new ConfigurationMember(filename, "REMOTE CONFIG SETTINGS", loadConfigurationOptions,
-                                        handleIncomingConfiguration,true);
-            configMember.forceConfigurationPluginLibrary("OpenSim.Framework.Configuration.XML.dll");
-            configMember.performConfigurationRetrieve();
-        }
+            TestHelpers.InMethod();
+//            TestHelpers.EnableLogging();
 
-        public void loadConfigurationOptions()
-        {
-            configMember.addConfigurationOption("base_config_url",
-                                                ConfigurationOption.ConfigurationTypes.TYPE_STRING_NOT_EMPTY,
-                                                "URL Containing Configuration Files", "http://localhost/", false);
-        }
+            //UUID userId = TestHelpers.ParseTail(0x1);
 
-        public bool handleIncomingConfiguration(string configuration_key, object configuration_result)
-        {
-            if (configuration_key == "base_config_url")
+            TerrainModule tm = new TerrainModule();
+            Scene scene = new SceneHelpers().SetupScene();            
+            SceneHelpers.SetupSceneModules(scene, tm);             
+
+            // Fillheight of 30
             {
-                baseConfigURL = (string) configuration_result;
+                double fillHeight = 30;
+
+                tm.InterfaceFillTerrain(new object[] { fillHeight });
+
+                double height = scene.Heightmap[128, 128];
+
+                Assert.AreEqual(fillHeight, height);
             }
-            return true;
+
+            // Max fillheight of 30
+            // According to http://wiki.secondlife.com/wiki/Tips_for_Creating_Heightfields_and_Details_on_Terrain_RAW_Files#Notes_for_Creating_Height_Field_Maps_for_Second_Life
+            {
+                double fillHeight = 508;
+
+                tm.InterfaceFillTerrain(new object[] { fillHeight });
+
+                double height = scene.Heightmap[128, 128];
+
+                Assert.AreEqual(fillHeight, height);
+            }
         }
     }
 }

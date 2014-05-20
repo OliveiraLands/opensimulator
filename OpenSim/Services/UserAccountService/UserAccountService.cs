@@ -256,6 +256,10 @@ namespace OpenSim.Services.UserAccountService
             return MakeUserAccount(d[0]);
         }
 
+        public void InvalidateCache(UUID userID)
+        {
+        }
+
         public bool StoreUserAccount(UserAccount data)
         {
 //            m_log.DebugFormat(
@@ -476,7 +480,6 @@ namespace OpenSim.Services.UserAccountService
                 {
                     account.ServiceURLs = new Dictionary<string, object>();
                     account.ServiceURLs["HomeURI"] = string.Empty;
-                    account.ServiceURLs["GatekeeperURI"] = string.Empty;
                     account.ServiceURLs["InventoryServerURI"] = string.Empty;
                     account.ServiceURLs["AssetServerURI"] = string.Empty;
                 }

@@ -865,18 +865,26 @@ namespace OpenSim.Region.ClientStack.Linden
                 item = m_Scene.InventoryService.GetItem(new InventoryItemBase(itemID));
                 if (item != null)
                 {
-                    copyItem = m_Scene.GiveInventoryItem(m_HostCapsObj.AgentID, item.Owner, itemID, folderID);
-                    if (copyItem != null && client != null)
+                    string message;
+                    copyItem = m_Scene.GiveInventoryItem(m_HostCapsObj.AgentID, item.Owner, itemID, folderID, out message);
+                    if (client != null)
                     {
-                        m_log.InfoFormat("[CAPS]: CopyInventoryFromNotecard, ItemID:{0}, FolderID:{1}", copyItem.ID, copyItem.Folder);
-                        client.SendBulkUpdateInventory(copyItem);
+                        if (copyItem != null)
+                        {
+                            m_log.InfoFormat("[CAPS]: CopyInventoryFromNotecard, ItemID:{0}, FolderID:{1}", copyItem.ID, copyItem.Folder);
+                            client.SendBulkUpdateInventory(copyItem);
+                        }
+                        else
+                        {
+                            client.SendAgentAlertMessage(message, false);
+                        }
                     }
                 }
                 else
                 {
                     m_log.ErrorFormat("[CAPS]: CopyInventoryFromNotecard - Failed to retrieve item {0} from notecard {1}", itemID, notecardID);
                     if (client != null)
-                        client.SendAlertMessage("Failed to retrieve item");
+                        client.SendAgentAlertMessage("Failed to retrieve item", false);
                 }
             }
             catch (Exception e)
@@ -923,13 +931,14 @@ namespace OpenSim.Region.ClientStack.Linden
                 string param, IOSHttpRequest httpRequest,
                 IOSHttpResponse httpResponse)
         {
-//            OSDMap req = (OSDMap)OSDParser.DeserializeLLSDXml(request);
+            OSDMap req = (OSDMap)OSDParser.DeserializeLLSDXml(request);
+            OSDMap accessPrefs = (OSDMap)req["access_prefs"];
+            string desiredMaturity = accessPrefs["max"];
+
             OSDMap resp = new OSDMap();
-
-            OSDMap accessPrefs = new OSDMap();
-            accessPrefs["max"] = "A";
-
-            resp["access_prefs"] = accessPrefs;
+            OSDMap respAccessPrefs = new OSDMap();
+            respAccessPrefs["max"] = desiredMaturity;   // echoing the maturity back means success
+            resp["access_prefs"] = respAccessPrefs;
 
             string response = OSDParser.SerializeLLSDXmlString(resp);
             return response; 

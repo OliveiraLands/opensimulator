@@ -124,7 +124,10 @@ namespace OpenSim.Services.Interfaces
     public class GridRegion
     {
         private static readonly ILog m_log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
+
+#pragma warning disable 414
         private static readonly string LogHeader = "[GRID REGION]";
+#pragma warning restore 414
 
         /// <summary>
         /// The port by which http communication occurs with the region 
@@ -142,7 +145,7 @@ namespace OpenSim.Services.Interfaces
         public string ServerURI
         {
             get { 
-                if ( m_serverURI != string.Empty ) {
+                if (!String.IsNullOrEmpty(m_serverURI)) {
                     return m_serverURI;
                 } else {
                     if (m_httpPort == 0)
@@ -152,7 +155,7 @@ namespace OpenSim.Services.Interfaces
                 }
             }
             set { 
-                if ( value.EndsWith("/") ) {
+                if (value.EndsWith("/")) {
                     m_serverURI = value;
                 } else {
                     m_serverURI = value + '/';
@@ -160,6 +163,16 @@ namespace OpenSim.Services.Interfaces
             }
         }
         protected string m_serverURI;
+
+        /// <summary>
+        /// Provides direct access to the 'm_serverURI' field, without returning a generated URL if m_serverURI is missing.
+        /// </summary>
+        public string RawServerURI
+        {
+            get { return m_serverURI; }
+            set { m_serverURI = value; }
+        }
+
 
         public string RegionName
         {

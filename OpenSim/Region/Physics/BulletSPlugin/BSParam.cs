@@ -97,6 +97,7 @@ public static class BSParam
 
     public static float TerrainImplementation { get; set; }
     public static int TerrainMeshMagnification { get; private set; }
+    public static float TerrainGroundPlane { get; private set; }
     public static float TerrainFriction { get; private set; }
     public static float TerrainHitFraction { get; private set; }
     public static float TerrainRestitution { get; private set; }
@@ -544,6 +545,8 @@ public static class BSParam
             (float)BSTerrainPhys.TerrainImplementation.Heightmap ),
         new ParameterDefn<int>("TerrainMeshMagnification", "Number of times the 256x256 heightmap is multiplied to create the terrain mesh" ,
             2 ),
+        new ParameterDefn<float>("TerrainGroundPlane", "Altitude of ground plane used to keep things from falling to infinity" ,
+            -500.0f ),
         new ParameterDefn<float>("TerrainFriction", "Factor to reduce movement against terrain surface" ,
             0.3f ),
         new ParameterDefn<float>("TerrainHitFraction", "Distance to measure hit collisions" ,
@@ -553,7 +556,7 @@ public static class BSParam
         new ParameterDefn<float>("TerrainContactProcessingThreshold", "Distance from terrain to stop processing collisions" ,
             0.0f ),
         new ParameterDefn<float>("TerrainCollisionMargin", "Margin where collision checking starts" ,
-            0.08f ),
+            0.04f ),
 
         new ParameterDefn<float>("AvatarFriction", "Factor to reduce movement against an avatar. Changed on avatar recreation.",
             0.2f ),
@@ -577,7 +580,7 @@ public static class BSParam
         new ParameterDefn<float>("AvatarHeightLowFudge", "A fudge factor to make small avatars stand on the ground",
             0f ),
         new ParameterDefn<float>("AvatarHeightMidFudge", "A fudge distance to adjust average sized avatars to be standing on ground",
-            -0.1f ),
+            0f ),
         new ParameterDefn<float>("AvatarHeightHighFudge", "A fudge factor to make tall avatars stand on the ground",
             0f ),
 	    new ParameterDefn<float>("AvatarContactProcessingThreshold", "Distance from capsule to check for collisions",
@@ -595,9 +598,9 @@ public static class BSParam
 	    new ParameterDefn<float>("AvatarStepForceFactor", "Controls the amount of force up applied to step up onto a step",
             1.0f ),
 	    new ParameterDefn<float>("AvatarStepUpCorrectionFactor", "Multiplied by height of step collision to create up movement at step",
-            1.0f ),
+            2.0f ),
 	    new ParameterDefn<int>("AvatarStepSmoothingSteps", "Number of frames after a step collision that we continue walking up stairs",
-            2 ),
+            1 ),
 
         new ParameterDefn<float>("VehicleMaxLinearVelocity", "Maximum velocity magnitude that can be assigned to a vehicle",
             1000.0f,

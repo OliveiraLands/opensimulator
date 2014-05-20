@@ -313,6 +313,69 @@ namespace OpenSim.Region.CoreModules.World.Estate
             return response;
         }
 
+        public string SetRegionEstate(RegionInfo regionInfo, int estateID)
+        {
+            string response;
+
+            if (regionInfo.EstateSettings.EstateID == estateID)
+            {
+                response = String.Format("\"{0}\" is already part of estate {1}", regionInfo.RegionName, estateID);
+            }
+            else
+            {
+                // get the current settings from DB
+                EstateSettings dbSettings = Scene.EstateDataService.LoadEstateSettings(estateID);
+                if (dbSettings.EstateID == 0)
+                {
+                    response = String.Format("No estate found with ID {0}", estateID);
+                }
+                else if (Scene.EstateDataService.LinkRegion(regionInfo.RegionID, estateID))
+                {
+                    // make sure there's a log entry to document the change
+                    m_log.InfoFormat("[ESTATE]: Region {0} ({1}) moved to Estate {2} ({3}).", regionInfo.RegionID, regionInfo.RegionName, estateID, dbSettings.EstateName);
+
+                   // propagate the change
+                    ChangeDelegate change = OnEstateInfoChange;
+
+                    if (change != null)
+                        change(regionInfo.RegionID);
+
+                    response = String.Empty;
+                }
+                else
+                {
+                    response = String.Format("Could not move \"{0}\" to estate {1}", regionInfo.RegionName, estateID);
+                }
+            }
+            return response;
+        }
+
+        public string CreateEstate(string estateName, UUID ownerID)
+        {
+            string response;
+            if (string.IsNullOrEmpty(estateName))
+            {
+                response = "No estate name specified.";
+            }
+            else
+            {
+                List<int> estates = Scene.EstateDataService.GetEstates(estateName);
+                if (estates.Count() > 0)
+                {
+                    response = String.Format("An estate named \"{0}\" already exists.", estateName);
+                }
+                else
+                {
+                    EstateSettings settings = Scene.EstateDataService.CreateNewEstate();
+                    settings.EstateOwner = ownerID;
+                    settings.EstateName = estateName;
+                    settings.Save();
+                    response = String.Empty;
+                }
+            }
+            return response;
+        }
+
         #endregion
 
         #region Packet Data Responders
@@ -1043,13 +1106,14 @@ namespace OpenSim.Region.CoreModules.World.Estate
 
                 TerrainUploader = null;
             }
+
+            m_log.DebugFormat("[CLIENT]: Terrain upload from {0} to {1} complete.", remoteClient.Name, Scene.Name);
             remoteClient.SendAlertMessage("Terrain Upload Complete. Loading....");
+
             ITerrainModule terr = Scene.RequestModuleInterface<ITerrainModule>();
 
             if (terr != null)
             {
-                m_log.Warn("[CLIENT]: Got Request to Send Terrain in region " + Scene.RegionInfo.RegionName);
-
                 try
                 {
                     MemoryStream terrainStream = new MemoryStream(terrainData);
@@ -1098,7 +1162,10 @@ namespace OpenSim.Region.CoreModules.World.Estate
             {
                 if (TerrainUploader == null)
                 {
-                    m_log.DebugFormat("Starting to receive uploaded terrain");
+                    m_log.DebugFormat(
+                        "[TERRAIN]: Started receiving terrain upload for region {0} from {1}", 
+                        Scene.Name, remote_client.Name);
+
                     TerrainUploader = new EstateTerrainXferHandler(remote_client, clientFileName);
                     remote_client.OnXferReceive += TerrainUploader.XferReceive;
                     remote_client.OnAbortXfer += AbortTerrainXferHandler;
@@ -1119,7 +1186,7 @@ namespace OpenSim.Region.CoreModules.World.Estate
             
             if (terr != null)
             {
-                m_log.Warn("[CLIENT]: Got Request to Send Terrain in region " + Scene.RegionInfo.RegionName);
+//                m_log.Warn("[CLIENT]: Got Request to Send Terrain in region " + Scene.RegionInfo.RegionName);
                 if (File.Exists(Util.dataDir() + "/terrain.raw"))
                 {
                     File.Delete(Util.dataDir() + "/terrain.raw");
@@ -1131,8 +1198,9 @@ namespace OpenSim.Region.CoreModules.World.Estate
                 input.Read(bdata, 0, (int)input.Length);
                 remote_client.SendAlertMessage("Terrain file written, starting download...");
                 Scene.XferManager.AddNewFile("terrain.raw", bdata);
-                // Tell client about it
-                m_log.Warn("[CLIENT]: Sending Terrain to " + remote_client.Name);
+
+                m_log.DebugFormat("[CLIENT]: Sending terrain for region {0} to {1}", Scene.Name, remote_client.Name);
+
                 remote_client.SendInitiateDownload("terrain.raw", clientFileName);
             }
         }
