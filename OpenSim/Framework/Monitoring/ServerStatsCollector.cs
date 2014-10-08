@@ -82,6 +82,9 @@ namespace OpenSim.Framework.Monitoring
         // IRegionModuleBase.Initialize
         public void Initialise(IConfigSource source)
         {
+            if (source == null)
+                return;
+
             IConfig cfg = source.Configs["Monitoring"];
 
             if (cfg != null)
@@ -141,19 +144,19 @@ namespace OpenSim.Framework.Monitoring
                 processorPercentPerfCounter = new PerfCounterControl(tempPC);
                 // A long time bug in mono is that CPU percent is reported as CPU percent idle. Windows reports CPU percent busy.
                 tempStat = new Stat(tempName, tempName, "", "percent", CategoryServer, ContainerProcessor,
-                                StatType.Pull, (s) => { GetNextValue(s, processorPercentPerfCounter, Util.IsWindows() ? 1 : -1); },
+                                StatType.Pull, (s) => { GetNextValue(s, processorPercentPerfCounter); },
                                 StatVerbosity.Info);
                 StatsManager.RegisterStat(tempStat);
                 RegisteredStats.Add(tempName, tempStat);
 
                 MakeStat("TotalProcessorTime", null, "sec", ContainerProcessor,
-                                    (s) => { s.Value = Process.GetCurrentProcess().TotalProcessorTime.TotalSeconds; });
+                                    (s) => { s.Value = Math.Round(Process.GetCurrentProcess().TotalProcessorTime.TotalSeconds, 3); });
 
                 MakeStat("UserProcessorTime", null, "sec", ContainerProcessor,
-                                    (s) => { s.Value = Process.GetCurrentProcess().UserProcessorTime.TotalSeconds; });
+                                    (s) => { s.Value = Math.Round(Process.GetCurrentProcess().UserProcessorTime.TotalSeconds, 3); });
 
                 MakeStat("PrivilegedProcessorTime", null, "sec", ContainerProcessor,
-                                    (s) => { s.Value = Process.GetCurrentProcess().PrivilegedProcessorTime.TotalSeconds; });
+                                    (s) => { s.Value = Math.Round(Process.GetCurrentProcess().PrivilegedProcessorTime.TotalSeconds, 3); });
 
                 MakeStat("Threads", null, "threads", ContainerProcessor,
                                     (s) => { s.Value = Process.GetCurrentProcess().Threads.Count; });
@@ -253,11 +256,8 @@ namespace OpenSim.Framework.Monitoring
         //  "How to get the CPU Usage in C#": http://stackoverflow.com/questions/278071/how-to-get-the-cpu-usage-in-c
         //  "Mono Performance Counters": http://www.mono-project.com/Mono_Performance_Counters
         private delegate double PerfCounterNextValue();
+
         private void GetNextValue(Stat stat, PerfCounterControl perfControl)
-        {
-            GetNextValue(stat, perfControl, 1.0);
-        }
-        private void GetNextValue(Stat stat, PerfCounterControl perfControl, double factor)
         {
             if (Util.EnvironmentTickCountSubtract(perfControl.lastFetch) > performanceCounterSampleInterval)
             {
@@ -265,16 +265,13 @@ namespace OpenSim.Framework.Monitoring
                 {
                     try
                     {
-                        // Kludge for factor to run double duty. If -1, subtract the value from one
-                        if (factor == -1)
-                            stat.Value = 1 - perfControl.perfCounter.NextValue();
-                        else
-                            stat.Value = perfControl.perfCounter.NextValue() / factor;
+                        stat.Value = Math.Round(perfControl.perfCounter.NextValue(), 3);
                     }
                     catch (Exception e)
                     {
                         m_log.ErrorFormat("{0} Exception on NextValue fetching {1}: {2}", LogHeader, stat.Name, e);
                     }
+
                     perfControl.lastFetch = Util.EnvironmentTickCount();
                 }
             }

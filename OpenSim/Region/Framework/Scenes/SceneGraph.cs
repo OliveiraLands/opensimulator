@@ -1446,8 +1446,9 @@ namespace OpenSim.Region.Framework.Scenes
             {
                 if (m_parentScene.Permissions.CanMoveObject(group.UUID, remoteClient.AgentId))// && PermissionsMngr.)
                 {
-                    group.GrabMovement(offset, pos, remoteClient);
+                    group.GrabMovement(objectID, offset, pos, remoteClient);
                 }
+
                 // This is outside the above permissions condition
                 // so that if the object is locked the client moving the object
                 // get's it's position on the simulator even if it was the same as before
@@ -1906,7 +1907,7 @@ namespace OpenSim.Region.Framework.Scenes
                 if (original == null)
                 {
                     m_log.WarnFormat(
-                        "[SCENEGRAPH]: Attempt to duplicate nonexistant prim id {0} by {1}", originalPrimID, AgentID);
+                        "[SCENEGRAPH]: Attempt to duplicate nonexistent prim id {0} by {1}", originalPrimID, AgentID);
 
                     return null;
                 }

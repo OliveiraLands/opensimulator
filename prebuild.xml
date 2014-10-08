@@ -111,6 +111,7 @@
       <Files>
         <Match pattern="*.cs" recurse="false"/>
         <Match path="Client" pattern="*.cs" recurse="true"/>
+        <Match path="ServiceAuth" pattern="*.cs" recurse="true"/>
       </Files>
     </Project>
 
@@ -822,6 +823,7 @@
       <Reference name="OpenSim.Capabilities"/>
       <Reference name="OpenSim.Framework.Communications"/>
       <Reference name="OpenSim.Framework.Console"/>
+      <Reference name="OpenSim.Framework.Monitoring"/>
       <Reference name="OpenSim.Framework.Servers.HttpServer"/>
       <Reference name="OpenSim.Region.Framework"/>
       <Reference name="OpenSim.Server.Base"/>
@@ -1406,6 +1408,7 @@
       <Reference name="OpenSim.Framework.Servers.HttpServer"/>
       <Reference name="OpenSim.Framework.Communications"/>
       <Reference name="OpenSim.Region.Physics.Manager"/>
+      <Reference name="OpenSim.Services.Interfaces"/>
       <Reference name="XMLRPC" path="../../../bin/"/>
       <Reference name="Nini" path="../../../bin/"/>
       <Reference name="log4net" path="../../../bin/"/>
@@ -1743,6 +1746,7 @@
       <Reference name="OpenMetaverseTypes" path="../../../../bin/"/>
       <Reference name="Nini.dll"  path="../../../../bin/"/>
       <Reference name="OpenSim.Framework"/>
+      <Reference name="OpenSim.Framework.Monitoring"/>
       <Reference name="OpenSim.Region.Framework"/>
       <Reference name="OpenSim.Region.CoreModules"/>
       <Reference name="OpenSim.Region.OptionalModules"/>
@@ -1833,6 +1837,7 @@
       <Reference name="OpenSim.Framework.RegionLoader.Filesystem"/>
       <Reference name="OpenSim.Framework.RegionLoader.Web"/>
       <Reference name="OpenSim.Framework.Servers"/>
+      <Reference name="OpenSim.Services.Interfaces"/>
       <Reference name="log4net" path="../../../bin/"/>
 
       <Files>
@@ -2227,7 +2232,6 @@
       <Reference name="OpenSim.Framework"/>
       <Reference name="OpenSim.Region.Framework"/>
       <Reference name="OpenSim.Region.ScriptEngine.Shared"/>
-      <Reference name="OpenSim.Region.ScriptEngine.Shared.YieldProlog"/>
       <Reference name="OpenSim.Region.CoreModules"/>
       <Reference name="OpenMetaverseTypes" path="../../../../../bin/"/>
       <Reference name="Nini" path="../../../../../bin/"/>
@@ -2485,6 +2489,7 @@
       <Reference name="OpenMetaverse.StructuredData" path="../../../bin/"/>
 
       <Reference name="OpenSim.Framework"/>
+      <Reference name="OpenSim.Framework.Monitoring"/>
       <Reference name="OpenSim.Data"/>
       <Reference name="OpenSim.Framework.Servers"/>
       <Reference name="OpenSim.Framework.Servers.HttpServer"/>
@@ -2528,6 +2533,7 @@
       <Reference name="OpenMetaverse" path="../../../bin/"/>
       <Reference name="OpenSim.Framework"/>
       <Reference name="OpenSim.Framework.Console"/>
+      <Reference name="OpenSim.Framework.Monitoring"/>
       <Reference name="Nini" path="../../../bin/"/>
       <Reference name="log4net" path="../../../bin/"/>
 
@@ -3081,6 +3087,7 @@
         <Match path="Asset/Tests" pattern="*.cs" recurse="true"/>
         <Match path="Avatar/Attachments/Tests" pattern="*.cs" recurse="true"/>
         <Match path="Avatar/AvatarFactory/Tests" pattern="*.cs" recurse="true"/>
+        <Match path="Avatar/Chat/Tests" pattern="*.cs" recurse="true"/>
         <Match path="Avatar/Friends/Tests" pattern="*.cs" recurse="true"/>
         <Match path="Avatar/Inventory/Archiver/Tests" pattern="*.cs" recurse="true"/>
         <Match path="Avatar/Inventory/Transfer/Tests" pattern="*.cs" recurse="true"/>
@@ -3181,8 +3188,11 @@
       <Reference name="System.Xml"/>
       <Reference name="System.Drawing"/>
       <Reference name="System.Runtime.Remoting"/>
+      <Reference name="Mono.Addins" path="../../../bin/"/>
       <Reference name="OpenMetaverseTypes" path="../../../bin/"/>
       <Reference name="OpenMetaverse" path="../../../bin/"/>
+      <Reference name="OpenSim"/>
+      <Reference name="OpenSim.ApplicationPlugins.RegionModulesController"/>
       <Reference name="OpenSim.Capabilities"/>
       <Reference name="OpenSim.Data"/>
       <Reference name="OpenSim.Framework"/>
@@ -3191,6 +3201,7 @@
       <Reference name="OpenSim.Framework.Monitoring"/>
       <Reference name="OpenSim.Framework.Servers"/>
       <Reference name="OpenSim.Framework.Servers.HttpServer"/>
+      <Reference name="OpenSim.Region.ClientStack"/>
       <Reference name="OpenSim.Region.ClientStack.LindenCaps"/>
       <Reference name="OpenSim.Region.Framework"/>
       <Reference name="OpenSim.Region.CoreModules"/>

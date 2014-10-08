@@ -292,7 +292,31 @@ namespace OpenSim.Region.CoreModules.Framework.InventoryAccess
 
             return UUID.Zero;
         }
-        
+
+        public virtual bool UpdateInventoryItemAsset(UUID ownerID, InventoryItemBase item, AssetBase asset)
+        {
+            if (item != null && item.Owner == ownerID && asset != null)
+            {
+                item.AssetID = asset.FullID;
+                item.Description = asset.Description;
+                item.Name = asset.Name;
+                item.AssetType = asset.Type;
+                item.InvType = (int)InventoryType.Object;
+
+                m_Scene.AssetService.Store(asset);
+                m_Scene.InventoryService.UpdateItem(item);
+
+                return true;
+            }
+            else
+            {
+                m_log.ErrorFormat("[INVENTORY ACCESS MODULE]: Given invalid item for inventory update: {0}",
+                    (item == null || asset == null? "null item or asset" : "wrong owner"));
+                return false;
+            }
+
+        }
+
         public virtual List<InventoryItemBase> CopyToInventory(
             DeRezAction action, UUID folderID,
             List<SceneObjectGroup> objectGroups, IClientAPI remoteClient, bool asAttachment)
@@ -532,6 +556,9 @@ namespace OpenSim.Region.CoreModules.Framework.InventoryAccess
 
             if (remoteClient != null && (remoteClient.AgentId != so.RootPart.OwnerID) && m_Scene.Permissions.PropagatePermissions())
             {
+                // Changing ownership, so apply the "Next Owner" permissions to all of the
+                // inventory item's permissions.
+
                 uint perms = effectivePerms;
                 PermissionsUtil.ApplyFoldedPermissions(effectivePerms, ref perms);
 
@@ -546,6 +573,13 @@ namespace OpenSim.Region.CoreModules.Framework.InventoryAccess
             }
             else
             {
+                // Not changing ownership.
+                // In this case we apply the permissions in the object's items ONLY to the inventory
+                // item's "Next Owner" permissions, but NOT to its "Current", "Base", etc. permissions.
+                // E.g., if the object contains a No-Transfer item then the item's "Next Owner"
+                // permissions are also No-Transfer.
+                PermissionsUtil.ApplyFoldedPermissions(effectivePerms, ref allObjectsNextOwnerPerms);
+
                 item.BasePermissions = effectivePerms;
                 item.CurrentPermissions = effectivePerms;
                 item.NextPermissions = allObjectsNextOwnerPerms & effectivePerms;
@@ -764,7 +798,7 @@ namespace OpenSim.Region.CoreModules.Framework.InventoryAccess
             UUID RayTargetID, byte BypassRayCast, bool RayEndIsIntersection,
             bool RezSelected, bool RemoveItem, UUID fromTaskID, bool attachment)
         {
-            AssetBase rezAsset = m_Scene.AssetService.Get(assetID.ToString());
+            AssetBase rezAsset = m_Scene.AssetService.Get(assetID.ToString());           
 
             if (rezAsset == null)
             {
@@ -795,7 +829,9 @@ namespace OpenSim.Region.CoreModules.Framework.InventoryAccess
             byte bRayEndIsIntersection = (byte)(RayEndIsIntersection ? 1 : 0);
             Vector3 pos;
 
-            bool single = m_Scene.GetObjectsToRez(rezAsset.Data, attachment, out objlist, out veclist, out bbox, out offsetHeight);
+            bool single 
+                = m_Scene.GetObjectsToRez(
+                    rezAsset.Data, attachment, out objlist, out veclist, out bbox, out offsetHeight);
 
             if (single)
             {
@@ -876,7 +912,7 @@ namespace OpenSim.Region.CoreModules.Framework.InventoryAccess
                 // one full update during the attachment
                 // process causes some clients to fail to display the
                 // attachment properly.
-                m_Scene.AddNewSceneObject(group, true, false);
+                m_Scene.AddNewSceneObject(group, !attachment, false);
 
                 // if attachment we set it's asset id so object updates
                 // can reflect that, if not, we set it's position in world.

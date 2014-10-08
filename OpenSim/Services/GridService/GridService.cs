@@ -46,6 +46,7 @@ namespace OpenSim.Services.GridService
         private static readonly ILog m_log =
                 LogManager.GetLogger(
                 MethodBase.GetCurrentMethod().DeclaringType);
+        private string LogHeader = "[GRID SERVICE]";
 
         private bool m_DeleteOnUnregister = true;
         private static GridService m_RootInstance = null;
@@ -56,6 +57,10 @@ namespace OpenSim.Services.GridService
         protected bool m_AllowDuplicateNames = false;
         protected bool m_AllowHypergridMapSearch = false;
 
+        protected bool m_SuppressVarregionOverlapCheckOnRegistration = false;
+
+        private static Dictionary<string,object> m_ExtraFeatures = new Dictionary<string, object>();
+
         public GridService(IConfigSource config)
             : base(config)
         {
@@ -63,6 +68,9 @@ namespace OpenSim.Services.GridService
 
             m_config = config;
             IConfig gridConfig = config.Configs["GridService"];
+
+            bool suppressConsoleCommands = false;
+
             if (gridConfig != null)
             {
                 m_DeleteOnUnregister = gridConfig.GetBoolean("DeleteOnUnregister", true);
@@ -76,13 +84,19 @@ namespace OpenSim.Services.GridService
                 }
                 m_AllowDuplicateNames = gridConfig.GetBoolean("AllowDuplicateNames", m_AllowDuplicateNames);
                 m_AllowHypergridMapSearch = gridConfig.GetBoolean("AllowHypergridMapSearch", m_AllowHypergridMapSearch);
+
+                m_SuppressVarregionOverlapCheckOnRegistration = gridConfig.GetBoolean("SuppressVarregionOverlapCheckOnRegistration", m_SuppressVarregionOverlapCheckOnRegistration);
+
+                // This service is also used locally by a simulator running in grid mode.  This switches prevents
+                // inappropriate console commands from being registered
+                suppressConsoleCommands = gridConfig.GetBoolean("SuppressConsoleCommands", suppressConsoleCommands);
             }
-            
+
             if (m_RootInstance == null)
             {
                 m_RootInstance = this;
 
-                if (MainConsole.Instance != null)
+                if (!suppressConsoleCommands && MainConsole.Instance != null)
                 {
                     MainConsole.Instance.Commands.AddCommand("Regions", true,
                             "deregister region id",
@@ -91,17 +105,12 @@ namespace OpenSim.Services.GridService
                             String.Empty,
                             HandleDeregisterRegion);
 
-                    // A messy way of stopping this command being added if we are in standalone (since the simulator
-                    // has an identically named command
-                    //
-                    // XXX: We're relying on the OpenSimulator version being registered first, which is not well defined.
-                    if (MainConsole.Instance.Commands.Resolve(new string[] { "show", "regions" }).Length == 0)
-                        MainConsole.Instance.Commands.AddCommand("Regions", true,
-                                "show regions",
-                                "show regions",
-                                "Show details on all regions",
-                                String.Empty,
-                                HandleShowRegions);
+                    MainConsole.Instance.Commands.AddCommand("Regions", true,
+                            "show regions",
+                            "show regions",
+                            "Show details on all regions",
+                            String.Empty,
+                            HandleShowRegions);
 
                     MainConsole.Instance.Commands.AddCommand("Regions", true,
                             "show region name",
@@ -117,15 +126,51 @@ namespace OpenSim.Services.GridService
                             "For example, show region at 1000 1000",
                             HandleShowRegionAt);
 
-                    MainConsole.Instance.Commands.AddCommand("Regions", true,
-                            "set region flags",
-                            "set region flags <Region name> <flags>",
-                            "Set database flags for region",
+                    MainConsole.Instance.Commands.AddCommand("General", true,
+                            "show grid size",
+                            "show grid size",
+                            "Show the current grid size (excluding hyperlink references)",
                             String.Empty,
-                            HandleSetFlags);
+                            HandleShowGridSize);
+
+                    MainConsole.Instance.Commands.AddCommand("Regions", true,
+                             "set region flags",
+                             "set region flags <Region name> <flags>",
+                             "Set database flags for region",
+                             String.Empty,
+                             HandleSetFlags);
                 }
+
+                if (!suppressConsoleCommands)
+                    SetExtraServiceURLs(config);
+
                 m_HypergridLinker = new HypergridLinker(m_config, this, m_Database);
             }
+        }
+
+        private void SetExtraServiceURLs(IConfigSource config)
+        {
+            IConfig loginConfig = config.Configs["LoginService"];
+            IConfig gridConfig = config.Configs["GridService"];
+
+            if (loginConfig == null || gridConfig == null)
+                return;
+            
+            string configVal;
+            
+            configVal = loginConfig.GetString("SearchURL", string.Empty);
+            if (!string.IsNullOrEmpty(configVal))
+                m_ExtraFeatures["search-server-url"] = configVal;
+
+            configVal = loginConfig.GetString("MapTileURL", string.Empty);
+            if (!string.IsNullOrEmpty(configVal))
+                m_ExtraFeatures["map-server-url"] = configVal;
+            
+            configVal = loginConfig.GetString("DestinationGuide", string.Empty);
+            if (!string.IsNullOrEmpty(configVal))
+                m_ExtraFeatures["destination-guide-url"] = configVal;
+
+            m_ExtraFeatures["ExportSupported"] = gridConfig.GetString("ExportSupported", "true");
         }
 
         #region IGridService
@@ -137,12 +182,19 @@ namespace OpenSim.Services.GridService
             if (regionInfos.RegionID == UUID.Zero)
                 return "Invalid RegionID - cannot be zero UUID";
 
-            RegionData region = m_Database.Get(regionInfos.RegionLocX, regionInfos.RegionLocY, scopeID);
-            if ((region != null) && (region.RegionID != regionInfos.RegionID))
+            String reason = "Region overlaps another region";
+            RegionData region = FindAnyConflictingRegion(regionInfos, scopeID, out reason);
+            // If there is a conflicting region, if it has the same ID and same coordinates
+            //    then it is a region re-registering (permissions and ownership checked later).
+            if ((region != null) 
+                && ( (region.coordX != regionInfos.RegionCoordX)
+                    || (region.coordY != regionInfos.RegionCoordY)
+                    || (region.RegionID != regionInfos.RegionID) )
+                )
             {
-                m_log.WarnFormat("[GRID SERVICE]: Region {0} tried to register in coordinates {1}, {2} which are already in use in scope {3}.", 
-                    regionInfos.RegionID, regionInfos.RegionLocX, regionInfos.RegionLocY, scopeID);
-                return "Region overlaps another region";
+                // If not same ID and same coordinates, this new region has conflicts and can't be registered.
+                m_log.WarnFormat("{0} Register region conflict in scope {1}. {2}", LogHeader, scopeID, reason);
+                return reason;
             }
 
             if (region != null)
@@ -272,6 +324,112 @@ namespace OpenSim.Services.GridService
             return String.Empty;
         }
 
+        /// <summary>
+        /// Search the region map for regions conflicting with this region.
+        /// The region to be added is passed and we look for any existing regions that are
+        /// in the requested location, that are large varregions that overlap this region, or
+        /// are previously defined regions that would lie under this new region.
+        /// </summary>
+        /// <param name="regionInfos">Information on region requested to be added to the world map</param>
+        /// <param name="scopeID">Grid id for region</param>
+        /// <param name="reason">The reason the returned region conflicts with passed region</param>
+        /// <returns></returns>
+        private RegionData FindAnyConflictingRegion(GridRegion regionInfos, UUID scopeID, out string reason)
+        {
+            reason = "Reregistration";
+            // First see if there is an existing region right where this region is trying to go
+            // (We keep this result so it can be returned if suppressing errors)
+            RegionData noErrorRegion = m_Database.Get(regionInfos.RegionLocX, regionInfos.RegionLocY, scopeID);
+            RegionData region = noErrorRegion;
+            if (region != null
+                && region.RegionID == regionInfos.RegionID
+                && region.sizeX == regionInfos.RegionSizeX
+                && region.sizeY == regionInfos.RegionSizeY)
+            {
+                // If this seems to be exactly the same region, return this as it could be
+                //     a re-registration (permissions checked by calling routine).
+                m_log.DebugFormat("{0} FindAnyConflictingRegion: re-register of {1}",
+                                        LogHeader, RegionString(regionInfos));
+                return region;
+            }
+
+            // No region exactly there or we're resizing an existing region.
+            // Fetch regions that could be varregions overlapping requested location.
+            int xmin = regionInfos.RegionLocX - (int)Constants.MaximumRegionSize + 10;
+            int xmax = regionInfos.RegionLocX;
+            int ymin = regionInfos.RegionLocY - (int)Constants.MaximumRegionSize + 10;
+            int ymax = regionInfos.RegionLocY;
+            List<RegionData> rdatas = m_Database.Get(xmin, ymin, xmax, ymax, scopeID);
+            foreach (RegionData rdata in rdatas)
+            {
+                // m_log.DebugFormat("{0} FindAnyConflictingRegion: find existing. Checking {1}", LogHeader, RegionString(rdata) );
+                if ( (rdata.posX + rdata.sizeX > regionInfos.RegionLocX)
+                    && (rdata.posY + rdata.sizeY > regionInfos.RegionLocY) )
+                {
+                    region = rdata;
+                    m_log.WarnFormat("{0} FindAnyConflictingRegion: conflict of {1} by existing varregion {2}",
+                                LogHeader, RegionString(regionInfos), RegionString(region));
+                    reason = String.Format("Region location is overlapped by existing varregion {0}",
+                                                RegionString(region));
+
+                    if (m_SuppressVarregionOverlapCheckOnRegistration)
+                        region = noErrorRegion;
+                    return region;
+                }
+            }
+
+            // There isn't a region that overlaps this potential region.
+            // See if this potential region overlaps an existing region.
+            // First, a shortcut of not looking for overlap if new region is legacy region sized
+            //     and connot overlap anything.
+            if (regionInfos.RegionSizeX != Constants.RegionSize
+                || regionInfos.RegionSizeY != Constants.RegionSize)
+            {
+                // trim range looked for so we don't pick up neighbor regions just off the edges
+                xmin = regionInfos.RegionLocX;
+                xmax = regionInfos.RegionLocX + regionInfos.RegionSizeX - 10;
+                ymin = regionInfos.RegionLocY;
+                ymax = regionInfos.RegionLocY + regionInfos.RegionSizeY - 10;
+                rdatas = m_Database.Get(xmin, ymin, xmax, ymax, scopeID);
+
+                // If the region is being resized, the found region could be ourself.
+                foreach (RegionData rdata in rdatas)
+                {
+                    // m_log.DebugFormat("{0} FindAnyConflictingRegion: see if overlap. Checking {1}", LogHeader, RegionString(rdata) );
+                    if (region == null || region.RegionID != regionInfos.RegionID)
+                    {
+                        region = rdata;
+                        m_log.WarnFormat("{0} FindAnyConflictingRegion: conflict of varregion {1} overlaps existing region {2}",
+                                LogHeader, RegionString(regionInfos), RegionString(region));
+                        reason = String.Format("Region {0} would overlap existing region {1}",
+                                        RegionString(regionInfos), RegionString(region));
+
+                        if (m_SuppressVarregionOverlapCheckOnRegistration)
+                            region = noErrorRegion;
+                        return region;
+                    }
+                }
+            }
+
+            // If we get here, region is either null (nothing found here) or
+            //     is the non-conflicting region found at the location being requested.
+            return region;
+        }
+
+        // String describing name and region location of passed region
+        private String RegionString(RegionData reg)
+        {
+            return String.Format("{0}/{1} at <{2},{3}>",
+                reg.RegionName, reg.RegionID, reg.coordX, reg.coordY);
+        }
+
+        // String describing name and region location of passed region
+        private String RegionString(GridRegion reg)
+        {
+            return String.Format("{0}/{1} at <{2},{3}>",
+                reg.RegionName, reg.RegionID, reg.RegionCoordX, reg.RegionCoordY);
+        }
+
         public bool DeregisterRegion(UUID regionID)
         {
             RegionData region = m_Database.Get(regionID, UUID.Zero);
@@ -328,7 +486,11 @@ namespace OpenSim.Services.GridService
                     }
                 }
 
-//                m_log.DebugFormat("[GRID SERVICE]: region {0} has {1} neighbours", region.RegionName, rinfos.Count);
+                // string rNames = "";
+                // foreach (GridRegion gr in rinfos)
+                //     rNames += gr.RegionName + ",";
+                // m_log.DebugFormat("{0} region {1} has {2} neighbours ({3})",
+                //             LogHeader, region.RegionName, rinfos.Count, rNames);
             }
             else
             {
@@ -615,6 +777,27 @@ namespace OpenSim.Services.GridService
             OutputRegionsToConsoleSummary(regions);
         }
 
+        private void HandleShowGridSize(string module, string[] cmd)
+        {
+            List<RegionData> regions = m_Database.Get(int.MinValue, int.MinValue, int.MaxValue, int.MaxValue, UUID.Zero);
+
+            double size = 0;
+
+            foreach (RegionData region in regions)
+            {
+                int flags = Convert.ToInt32(region.Data["flags"]);
+
+                if ((flags & (int)Framework.RegionFlags.Hyperlink) == 0)
+                    size += region.sizeX * region.sizeY;
+            }
+
+            MainConsole.Instance.Output("This is a very rough approximation.");
+            MainConsole.Instance.Output("Although it will not count regions that are actually links to others over the Hypergrid, ");
+            MainConsole.Instance.Output("it will count regions that are inactive but were not deregistered from the grid service");
+            MainConsole.Instance.Output("(e.g. simulator crashed rather than shutting down cleanly).\n");
+
+            MainConsole.Instance.OutputFormat("Grid size: {0} km squared.", size / 1000000);
+        }
 
         private void HandleShowRegion(string module, string[] cmd)
         {
@@ -674,7 +857,8 @@ namespace OpenSim.Services.GridService
             ConsoleDisplayList dispList = new ConsoleDisplayList();
             dispList.AddRow("Region Name", r.RegionName);
             dispList.AddRow("Region ID", r.RegionID);
-            dispList.AddRow("Location", string.Format("{0},{1}", r.coordX, r.coordY));
+            dispList.AddRow("Position", string.Format("{0},{1}", r.coordX, r.coordY));
+            dispList.AddRow("Size", string.Format("{0}x{1}", r.sizeX, r.sizeY));
             dispList.AddRow("URI", r.Data["serverURI"]);
             dispList.AddRow("Owner ID", r.Data["owner_uuid"]);
             dispList.AddRow("Flags", flags);
@@ -691,10 +875,10 @@ namespace OpenSim.Services.GridService
         private void OutputRegionsToConsoleSummary(List<RegionData> regions)
         {
             ConsoleDisplayTable dispTable = new ConsoleDisplayTable();
-            dispTable.AddColumn("Name", 16);
+            dispTable.AddColumn("Name", 44);
             dispTable.AddColumn("ID", 36);
             dispTable.AddColumn("Position", 11);
-            dispTable.AddColumn("Owner ID", 36);
+            dispTable.AddColumn("Size", 11);
             dispTable.AddColumn("Flags", 60);
 
             foreach (RegionData r in regions)
@@ -704,7 +888,7 @@ namespace OpenSim.Services.GridService
                     r.RegionName,
                     r.RegionID.ToString(),
                     string.Format("{0},{1}", r.coordX, r.coordY),
-                    r.Data["owner_uuid"].ToString(),
+                    string.Format("{0}x{1}", r.sizeX, r.sizeY),
                     flags.ToString());
             }
 
@@ -773,6 +957,19 @@ namespace OpenSim.Services.GridService
                 MainConsole.Instance.Output(String.Format("Set region {0} to {1}", r.RegionName, f));
                 m_Database.Store(r);
             }
+        }
+
+        /// <summary>
+        /// Gets the grid extra service URls we wish for the region to send in OpenSimExtras to dynamically refresh 
+        /// parameters in the viewer used to access services like map, search and destination guides.
+        /// <para>see "SimulatorFeaturesModule" </para>
+        /// </summary>
+        /// <returns>
+        /// The grid extra service URls.
+        /// </returns>
+        public Dictionary<string,object> GetExtraFeatures()
+        {
+            return m_ExtraFeatures;
         }
     }
 }

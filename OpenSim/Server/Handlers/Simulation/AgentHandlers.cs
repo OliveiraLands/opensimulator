@@ -144,12 +144,16 @@ namespace OpenSim.Server.Handlers.Simulation
             if (args.ContainsKey("agent_home_uri"))
                 agentHomeURI = args["agent_home_uri"].AsString();
 
+            string theirVersion = string.Empty;
+            if (args.ContainsKey("my_version"))
+                theirVersion = args["my_version"].AsString();
+
             GridRegion destination = new GridRegion();
             destination.RegionID = regionID;
 
             string reason;
             string version;
-            bool result = m_SimulationService.QueryAccess(destination, agentID, agentHomeURI, viaTeleport, position, out version, out reason);
+            bool result = m_SimulationService.QueryAccess(destination, agentID, agentHomeURI, viaTeleport, position, theirVersion, out version, out reason);
 
             responsedata["int_response_code"] = HttpStatusCode.OK;
 
@@ -246,14 +250,30 @@ namespace OpenSim.Server.Handlers.Simulation
                 return encoding.GetBytes("false");
             }
 
+            string requestBody;
+
             Stream inputStream = request;
-            if ((httpRequest.ContentType == "application/x-gzip" || httpRequest.Headers["Content-Encoding"] == "gzip") || (httpRequest.Headers["X-Content-Encoding"] == "gzip"))
-                inputStream = new GZipStream(inputStream, CompressionMode.Decompress);
+            Stream innerStream = null;
+            try
+            {
+                if ((httpRequest.ContentType == "application/x-gzip" || httpRequest.Headers["Content-Encoding"] == "gzip") || (httpRequest.Headers["X-Content-Encoding"] == "gzip"))
+                {
+                    innerStream = inputStream;
+                    inputStream = new GZipStream(innerStream, CompressionMode.Decompress);
+                }
 
-            StreamReader reader = new StreamReader(inputStream, encoding);
+                using (StreamReader reader = new StreamReader(inputStream, encoding))
+                {
+                    requestBody = reader.ReadToEnd();
+                }
+            }
+            finally
+            {
+                if (innerStream != null)
+                    innerStream.Dispose();
+                inputStream.Dispose();
+            }
 
-            string requestBody = reader.ReadToEnd();
-            reader.Close();
             keysvals.Add("body", requestBody);
 
             Hashtable responsedata = new Hashtable();
@@ -457,15 +477,31 @@ namespace OpenSim.Server.Handlers.Simulation
             keysvals.Add("headers", headervals);
             keysvals.Add("querystringkeys", querystringkeys);
 
-            Stream inputStream = request;
-            if ((httpRequest.ContentType == "application/x-gzip" || httpRequest.Headers["Content-Encoding"] == "gzip") || (httpRequest.Headers["X-Content-Encoding"] == "gzip"))
-                inputStream = new GZipStream(inputStream, CompressionMode.Decompress);
-
+            String requestBody;
             Encoding encoding = Encoding.UTF8;
-            StreamReader reader = new StreamReader(inputStream, encoding);
 
-            string requestBody = reader.ReadToEnd();
-            reader.Close();
+            Stream inputStream = request;
+            Stream innerStream = null;
+            try
+            {
+                if ((httpRequest.ContentType == "application/x-gzip" || httpRequest.Headers["Content-Encoding"] == "gzip") || (httpRequest.Headers["X-Content-Encoding"] == "gzip"))
+                {
+                    innerStream = inputStream;
+                    inputStream = new GZipStream(innerStream, CompressionMode.Decompress);
+                }
+
+                using (StreamReader reader = new StreamReader(inputStream, encoding))
+                {
+                    requestBody = reader.ReadToEnd();
+                }
+            }
+            finally
+            {
+                if (innerStream != null)
+                    innerStream.Dispose();
+                inputStream.Dispose();
+            }
+
             keysvals.Add("body", requestBody);
 
             httpResponse.StatusCode = 200;

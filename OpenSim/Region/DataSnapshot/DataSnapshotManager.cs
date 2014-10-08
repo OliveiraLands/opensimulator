@@ -373,38 +373,41 @@ namespace OpenSim.Region.DataSnapshot
             for (int i = 0; i < services.Length; i++)
             {
                 string url = services[i].Trim();
-                RestClient cli = new RestClient(url);
-                cli.AddQueryParameter("service", serviceName);
-                cli.AddQueryParameter("host", m_hostname);
-                cli.AddQueryParameter("port", m_listener_port);
-                cli.AddQueryParameter("secret", m_Secret.ToString());
-                cli.RequestMethod = "GET";
-                try
+                using (RestClient cli = new RestClient(url))
                 {
-                    reply = cli.Request();
+                    cli.AddQueryParameter("service", serviceName);
+                    cli.AddQueryParameter("host", m_hostname);
+                    cli.AddQueryParameter("port", m_listener_port);
+                    cli.AddQueryParameter("secret", m_Secret.ToString());
+                    cli.RequestMethod = "GET";
+                    try
+                    {
+                        reply = cli.Request(null);
+                    }
+                    catch (WebException)
+                    {
+                        m_log.Warn("[DATASNAPSHOT]: Unable to notify " + url);
+                    }
+                    catch (Exception e)
+                    {
+                        m_log.Warn("[DATASNAPSHOT]: Ignoring unknown exception " + e.ToString());
+                    }
+
+                    byte[] response = new byte[1024];
+                    // int n = 0;
+                    try
+                    {
+                        // n = reply.Read(response, 0, 1024);
+                        reply.Read(response, 0, 1024);
+                    }
+                    catch (Exception e)
+                    {
+                        m_log.WarnFormat("[DATASNAPSHOT]: Unable to decode reply from data service. Ignoring. {0}", e.StackTrace);
+                    }
+                    // This is not quite working, so...
+                    // string responseStr = Util.UTF8.GetString(response);
+                    m_log.Info("[DATASNAPSHOT]: data service " + url + " notified. Secret: " + m_Secret);
                 }
-                catch (WebException)
-                {
-                    m_log.Warn("[DATASNAPSHOT]: Unable to notify " + url);
-                }
-                catch (Exception e)
-                {
-                    m_log.Warn("[DATASNAPSHOT]: Ignoring unknown exception " + e.ToString());
-                }
-                byte[] response = new byte[1024];
-                // int n = 0;
-                try
-                {
-                    // n = reply.Read(response, 0, 1024);
-                    reply.Read(response, 0, 1024);
-                }
-                catch (Exception e)
-                {
-                    m_log.WarnFormat("[DATASNAPSHOT]: Unable to decode reply from data service. Ignoring. {0}", e.StackTrace);
-                }
-                // This is not quite working, so...
-                // string responseStr = Util.UTF8.GetString(response);
-                m_log.Info("[DATASNAPSHOT]: data service " + url + " notified. Secret: " + m_Secret);
             }
 
         }

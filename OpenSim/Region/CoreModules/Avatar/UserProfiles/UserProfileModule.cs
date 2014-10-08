@@ -1152,16 +1152,24 @@ namespace OpenSim.Region.CoreModules.Avatar.UserProfiles
             }
             
             parameters = (OSDMap)Params;
-            
-            OSDArray list = (OSDArray)parameters["result"];
-            
-            foreach(OSD asset in list)
-            {
-                OSDString assetId = (OSDString)asset;
 
-                Scene.AssetService.Get(string.Format("{0}/{1}",assetServerURI, assetId.AsString()));
+            if (parameters.ContainsKey("result"))
+            {
+                OSDArray list = (OSDArray)parameters["result"];
+
+                foreach (OSD asset in list)
+                {
+                    OSDString assetId = (OSDString)asset;
+
+                    Scene.AssetService.Get(string.Format("{0}/{1}", assetServerURI, assetId.AsString()));
+                }
+                return true;
             }
-            return true;
+            else
+            {
+                m_log.ErrorFormat("[PROFILES]: Problematic response for image_assets_request from {0}", profileServerURI);
+                return false;
+            }
         }
 
         /// <summary>

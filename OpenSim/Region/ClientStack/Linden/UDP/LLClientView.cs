@@ -1154,6 +1154,9 @@ namespace OpenSim.Region.ClientStack.LindenUDP
 
         /// <summary>
         ///  Send the region heightmap to the client
+        ///  This method is only called when not doing intellegent terrain patch sending and
+        ///  is only called when the scene presence is initially created and sends all of the
+        ///  region's patches to the client.
         /// </summary>
         /// <param name="map">heightmap</param>
         public virtual void SendLayerData(float[] map)
@@ -1237,9 +1240,49 @@ namespace OpenSim.Region.ClientStack.LindenUDP
 
         // Legacy form of invocation that passes around a bare data array.
         // Just ignore what was passed and use the real terrain info that is part of the scene.
+        // As a HORRIBLE kludge in an attempt to not change the definition of IClientAPI, 
+        //    there is a special form for specifying multiple terrain patches to send.
+        //    The form is to pass 'px' as negative the number of patches to send and to
+        //    pass the float array as pairs of patch X and Y coordinates. So, passing 'px'
+        //    as -2 and map= [3, 5, 8, 4] would mean to send two terrain heightmap patches
+        //    and the patches to send are <3,5> and <8,4>.
         public void SendLayerData(int px, int py, float[] map)
         {
-            SendLayerData(px, py, m_scene.Heightmap.GetTerrainData());
+            if (px >= 0)
+            {
+                SendLayerData(px, py, m_scene.Heightmap.GetTerrainData());
+            }
+            else
+            {
+                int numPatches = -px;
+                int[] xPatches = new int[numPatches];
+                int[] yPatches = new int[numPatches];
+                for (int pp = 0; pp < numPatches; pp++)
+                {
+                    xPatches[pp] = (int)map[pp * 2];
+                    yPatches[pp] = (int)map[pp * 2 + 1];
+                }
+
+                // DebugSendingPatches("SendLayerData", xPatches, yPatches);
+
+                SendLayerData(xPatches, yPatches, m_scene.Heightmap.GetTerrainData());
+            }
+        }
+
+        private void DebugSendingPatches(string pWho, int[] pX, int[] pY)
+        {
+            if (m_log.IsDebugEnabled)
+            {
+                int numPatches = pX.Length;
+                string Xs = "";
+                string Ys = "";
+                for (int pp = 0; pp < numPatches; pp++)
+                {
+                    Xs += String.Format("{0}", (int)pX[pp]) + ",";
+                    Ys += String.Format("{0}", (int)pY[pp]) + ",";
+                }
+                m_log.DebugFormat("{0} {1}: numPatches={2}, X={3}, Y={4}", LogHeader, pWho, numPatches, Xs, Ys);
+            }
         }
 
         /// <summary>
@@ -1252,6 +1295,13 @@ namespace OpenSim.Region.ClientStack.LindenUDP
         /// <param name="map">heightmap</param>
         public void SendLayerData(int px, int py, TerrainData terrData)
         {
+            int[] xPatches = new[] { px };
+            int[] yPatches = new[] { py };
+            SendLayerData(xPatches, yPatches, terrData);
+        }
+
+        private void SendLayerData(int[] px, int[] py, TerrainData terrData)
+        {
             try
             {
                 /* test code using the terrain compressor in libOpenMetaverse
@@ -1259,35 +1309,61 @@ namespace OpenSim.Region.ClientStack.LindenUDP
                 patchInd[0] = px + (py * Constants.TerrainPatchSize);
                 LayerDataPacket layerpack = TerrainCompressor.CreateLandPacket(terrData.GetFloatsSerialized(), patchInd);
                  */
-                LayerDataPacket layerpack = OpenSimTerrainCompressor.CreateLandPacket(terrData, px, py);
-                
-                // When a user edits the terrain, so much data is sent, the data queues up fast and presents a sub optimal editing experience.  
-                // To alleviate this issue, when the user edits the terrain, we start skipping the queues until they're done editing the terrain.
-                // We also make them unreliable because it's extremely likely that multiple packets will be sent for a terrain patch area 
-                // invalidating previous packets for that area.
-
-                // It's possible for an editing user to flood themselves with edited packets but the majority of use cases are such that only a 
-                // tiny percentage of users will be editing the terrain.     Other, non-editing users will see the edits much slower.
-                
-                // One last note on this topic, by the time users are going to be editing the terrain, it's extremely likely that the sim will 
-                // have rezzed already and therefore this is not likely going to cause any additional issues with lost packets, objects or terrain 
-                // patches.
-
-                // m_justEditedTerrain is volatile, so test once and duplicate two affected statements so we only have one cache miss.
-                if (m_justEditedTerrain)
+                // Many, many patches could have been passed to us. Since the patches will be compressed
+                //   into variable sized blocks, we cannot pre-compute how many will fit into one
+                //   packet. While some fancy packing algorithm is possible, 4 seems to always fit.
+                int PatchesAssumedToFit = 4;
+                for (int pcnt = 0; pcnt < px.Length; pcnt += PatchesAssumedToFit)
                 {
-                    layerpack.Header.Reliable = false;
-                    OutPacket(layerpack, ThrottleOutPacketType.Unknown );
+                    int remaining = Math.Min(px.Length - pcnt, PatchesAssumedToFit);
+                    int[] xPatches = new int[remaining];
+                    int[] yPatches = new int[remaining];
+                    for (int ii = 0; ii < remaining; ii++)
+                    {
+                        xPatches[ii] = px[pcnt + ii];
+                        yPatches[ii] = py[pcnt + ii];
+                    }
+                    LayerDataPacket layerpack = OpenSimTerrainCompressor.CreateLandPacket(terrData, xPatches, yPatches);
+                    // DebugSendingPatches("SendLayerDataInternal", xPatches, yPatches);
+
+                    SendTheLayerPacket(layerpack);
                 }
-                else
-                {
-                    layerpack.Header.Reliable = true;
-                    OutPacket(layerpack, ThrottleOutPacketType.Land);
-                }
+                // LayerDataPacket layerpack = OpenSimTerrainCompressor.CreateLandPacket(terrData, px, py);
+
             }
             catch (Exception e)
             {
                 m_log.Error("[CLIENT]: SendLayerData() Failed with exception: " + e.Message, e);
+            }
+        }
+
+        // When a user edits the terrain, so much data is sent, the data queues up fast and presents a
+        // sub optimal editing experience. To alleviate this issue, when the user edits the terrain, we
+        // start skipping the queues until they're done editing the terrain. We also make them
+        // unreliable because it's extremely likely that multiple packets will be sent for a terrain patch
+        // area invalidating previous packets for that area.
+
+        // It's possible for an editing user to flood themselves with edited packets but the majority
+        // of use cases are such that only a tiny percentage of users will be editing the terrain.
+        // Other, non-editing users will see the edits much slower.
+        
+        // One last note on this topic, by the time users are going to be editing the terrain, it's
+        // extremely likely that the sim will have rezzed already and therefore this is not likely going
+        // to cause any additional issues with lost packets, objects or terrain patches.
+
+        // m_justEditedTerrain is volatile, so test once and duplicate two affected statements so we
+        //    only have one cache miss.
+        private void SendTheLayerPacket(LayerDataPacket layerpack)
+        {
+            if (m_justEditedTerrain)
+            {
+                layerpack.Header.Reliable = false;
+                OutPacket(layerpack, ThrottleOutPacketType.Unknown );
+            }
+            else
+            {
+                layerpack.Header.Reliable = true;
+                OutPacket(layerpack, ThrottleOutPacketType.Land);
             }
         }
 
@@ -1467,10 +1543,9 @@ namespace OpenSim.Region.ClientStack.LindenUDP
                 mapReply.Data[i].Access = mapBlocks2[i].Access;
                 mapReply.Data[i].Agents = mapBlocks2[i].Agents;
 
-                // TODO: hookup varregion sim size here
                 mapReply.Size[i] = new MapBlockReplyPacket.SizeBlock();
-                mapReply.Size[i].SizeX = 256;
-                mapReply.Size[i].SizeY = 256;
+                mapReply.Size[i].SizeX = mapBlocks2[i].SizeX;
+                mapReply.Size[i].SizeY = mapBlocks2[i].SizeY;
             }
             OutPacket(mapReply, ThrottleOutPacketType.Land);
         }
@@ -4126,6 +4201,10 @@ namespace OpenSim.Region.ClientStack.LindenUDP
                 }
             }
 
+//            m_log.DebugFormat(
+//                "[LLCLIENTVIEW]: Sent {0} updates in ProcessEntityUpdates() for {1} {2} in {3}", 
+//                updatesThisCall, Name, SceneAgent.IsChildAgent ? "child" : "root", Scene.Name);
+//
             #endregion Packet Sending
         }
 
@@ -11773,7 +11852,6 @@ namespace OpenSim.Region.ClientStack.LindenUDP
         /// <returns></returns>
         protected bool HandleAgentTextureCached(IClientAPI simclient, Packet packet)
         {
-            //m_log.Debug("texture cached: " + packet.ToString());
             AgentCachedTexturePacket cachedtex = (AgentCachedTexturePacket)packet;
             AgentCachedTextureResponsePacket cachedresp = (AgentCachedTextureResponsePacket)PacketPool.Instance.GetPacket(PacketType.AgentCachedTextureResponse);
 
@@ -11789,24 +11867,22 @@ namespace OpenSim.Region.ClientStack.LindenUDP
             cachedresp.WearableData =
                 new AgentCachedTextureResponsePacket.WearableDataBlock[cachedtex.WearableData.Length];
 
-            //IAvatarFactoryModule fac = m_scene.RequestModuleInterface<IAvatarFactoryModule>();
-           // var item = fac.GetBakedTextureFaces(AgentId);
-            //WearableCacheItem[] items = fac.GetCachedItems(AgentId);
-
-            IAssetService cache = m_scene.AssetService;
-            IBakedTextureModule bakedTextureModule = m_scene.RequestModuleInterface<IBakedTextureModule>();
-            //bakedTextureModule = null;
             int maxWearablesLoop = cachedtex.WearableData.Length;
             if (maxWearablesLoop > AvatarWearable.MAX_WEARABLES)
                 maxWearablesLoop = AvatarWearable.MAX_WEARABLES;
 
+            // Find the cached baked textures for this user, if they're available
+
+            IAssetService cache = m_scene.AssetService;
+            IBakedTextureModule bakedTextureModule = m_scene.RequestModuleInterface<IBakedTextureModule>();
+            
+            WearableCacheItem[] cacheItems = null;
+
             if (bakedTextureModule != null && cache != null)
             {
-                // We need to make sure the asset stored in the bake is available on this server also by it's assetid before we map it to a Cacheid
-
-                WearableCacheItem[] cacheItems = null;
                 ScenePresence p = m_scene.GetScenePresence(AgentId);
                 if (p.Appearance != null)
+                {
                     if (p.Appearance.WearableCacheItems == null || p.Appearance.WearableCacheItemsDirty)
                     {
                         try
@@ -11815,22 +11891,6 @@ namespace OpenSim.Region.ClientStack.LindenUDP
                             p.Appearance.WearableCacheItems = cacheItems;
                             p.Appearance.WearableCacheItemsDirty = false;
                         }
-
-                        /*
-                         * The following Catch types DO NOT WORK, it jumps to the General Packet Exception Handler if you don't catch Exception!
-                         * 
-                        catch (System.Net.Sockets.SocketException)
-                        {
-                            cacheItems = null;
-                        }
-                        catch (WebException)
-                        {
-                            cacheItems = null;
-                        }
-                        catch (InvalidOperationException)
-                        {
-                            cacheItems = null;
-                        } */
                         catch (Exception)
                         {
                             cacheItems = null;
@@ -11841,87 +11901,54 @@ namespace OpenSim.Region.ClientStack.LindenUDP
                     {
                         cacheItems = p.Appearance.WearableCacheItems;
                     }
+                }
+            }
 
-                if (cache != null && cacheItems != null)
+            if (cacheItems != null)
+            {
+                // We need to make sure the asset stored in the bake is available on this server also by its assetid before we map it to a Cacheid.
+                // Copy the baked textures to the sim's assets cache (local only).
+                foreach (WearableCacheItem item in cacheItems)
                 {
-                    foreach (WearableCacheItem item in cacheItems)
+                    if (cache.GetCached(item.TextureID.ToString()) == null)
                     {
-
-                        if (cache.GetCached(item.TextureID.ToString()) == null)
-                        {
-                            item.TextureAsset.Temporary = true;
-                            cache.Store(item.TextureAsset);
-                        }
-
-
+                        item.TextureAsset.Temporary = true;
+                        item.TextureAsset.Local = true;
+                        cache.Store(item.TextureAsset);
                     }
                 }
-                if (cacheItems != null)
+
+                // Return the cached textures
+                for (int i = 0; i < maxWearablesLoop; i++)
                 {
+                    WearableCacheItem item =
+                        WearableCacheItem.SearchTextureIndex(cachedtex.WearableData[i].TextureIndex, cacheItems);
 
-                    for (int i = 0; i < maxWearablesLoop; i++)
+                    cachedresp.WearableData[i] = new AgentCachedTextureResponsePacket.WearableDataBlock();
+                    cachedresp.WearableData[i].TextureIndex = cachedtex.WearableData[i].TextureIndex;
+                    cachedresp.WearableData[i].HostName = new byte[0];
+                    if (item != null && cachedtex.WearableData[i].ID == item.CacheId)
                     {
-                        WearableCacheItem item =
-                            WearableCacheItem.SearchTextureIndex(cachedtex.WearableData[i].TextureIndex,cacheItems);
-
-                        cachedresp.WearableData[i] = new AgentCachedTextureResponsePacket.WearableDataBlock();
-                        cachedresp.WearableData[i].TextureIndex= cachedtex.WearableData[i].TextureIndex;
-                        cachedresp.WearableData[i].HostName = new byte[0];
-                        if (item != null && cachedtex.WearableData[i].ID == item.CacheId)
-                        {
-
-                            cachedresp.WearableData[i].TextureID = item.TextureID;
-                        }
-                        else
-                        {
-                            cachedresp.WearableData[i].TextureID = UUID.Zero;
-                        }
+                        cachedresp.WearableData[i].TextureID = item.TextureID;
                     }
-                }
-                else
-                {
-                    for (int i = 0; i < maxWearablesLoop; i++)
+                    else
                     {
-                        cachedresp.WearableData[i] = new AgentCachedTextureResponsePacket.WearableDataBlock();
-                        cachedresp.WearableData[i].TextureIndex = cachedtex.WearableData[i].TextureIndex;
                         cachedresp.WearableData[i].TextureID = UUID.Zero;
-                        //UUID.Parse("8334fb6e-c2f5-46ee-807d-a435f61a8d46");
-                        cachedresp.WearableData[i].HostName = new byte[0];
                     }
                 }
             }
             else
             {
-                if (cache == null)
+                // Cached textures not available
+                for (int i = 0; i < maxWearablesLoop; i++)
                 {
-                    for (int i = 0; i < maxWearablesLoop; i++)
-                    {
-                        cachedresp.WearableData[i] = new AgentCachedTextureResponsePacket.WearableDataBlock();
-                        cachedresp.WearableData[i].TextureIndex = cachedtex.WearableData[i].TextureIndex;
-                        cachedresp.WearableData[i].TextureID = UUID.Zero;
-                            //UUID.Parse("8334fb6e-c2f5-46ee-807d-a435f61a8d46");
-                        cachedresp.WearableData[i].HostName = new byte[0];
-                    }
-                }
-                else
-                {
-                    for (int i = 0; i < maxWearablesLoop; i++)
-                    {
-                        cachedresp.WearableData[i] = new AgentCachedTextureResponsePacket.WearableDataBlock();
-                        cachedresp.WearableData[i].TextureIndex = cachedtex.WearableData[i].TextureIndex;
-
-
-
-                        if (cache.GetCached(cachedresp.WearableData[i].TextureID.ToString()) == null)
-                            cachedresp.WearableData[i].TextureID = UUID.Zero;
-                            //UUID.Parse("8334fb6e-c2f5-46ee-807d-a435f61a8d46");
-                        else
-                            cachedresp.WearableData[i].TextureID = UUID.Zero;
-                                // UUID.Parse("8334fb6e-c2f5-46ee-807d-a435f61a8d46");
-                        cachedresp.WearableData[i].HostName = new byte[0];
-                    }
+                    cachedresp.WearableData[i] = new AgentCachedTextureResponsePacket.WearableDataBlock();
+                    cachedresp.WearableData[i].TextureIndex = cachedtex.WearableData[i].TextureIndex;
+                    cachedresp.WearableData[i].TextureID = UUID.Zero;
+                    cachedresp.WearableData[i].HostName = new byte[0];
                 }
             }
+            
             cachedresp.Header.Zerocoded = true;
             OutPacket(cachedresp, ThrottleOutPacketType.Task);
 
@@ -12314,6 +12341,10 @@ namespace OpenSim.Region.ClientStack.LindenUDP
         /// provide your own method.</param>
         protected void OutPacket(Packet packet, ThrottleOutPacketType throttlePacketType, bool doAutomaticSplitting, UnackedPacketMethod method)
         {
+            if (m_outPacketsToDrop != null)
+                if (m_outPacketsToDrop.Contains(packet.Type.ToString()))
+                    return;
+
             if (DebugPacketLevel > 0)
             {
                 bool logPacket = true;
@@ -12372,6 +12403,10 @@ namespace OpenSim.Region.ClientStack.LindenUDP
         /// <param name="Pack">OpenMetaverse.packet</param>
         public void ProcessInPacket(Packet packet)
         {
+            if (m_inPacketsToDrop != null)
+                if (m_inPacketsToDrop.Contains(packet.Type.ToString()))
+                    return;
+
             if (DebugPacketLevel > 0)
             {
                 bool logPacket = true;
@@ -13095,6 +13130,52 @@ namespace OpenSim.Region.ClientStack.LindenUDP
 
             eq.Enqueue(BuildEvent("BulkUpdateInventory",
                     llsd), AgentId);
+        }
+
+        private HashSet<string> m_outPacketsToDrop;
+
+        public bool AddOutPacketToDropSet(string packetName)
+        {
+            if (m_outPacketsToDrop == null)
+                m_outPacketsToDrop = new HashSet<string>();
+
+            return m_outPacketsToDrop.Add(packetName);
+        }
+
+        public bool RemoveOutPacketFromDropSet(string packetName)
+        {
+            if (m_outPacketsToDrop == null)
+                return false;
+
+            return m_outPacketsToDrop.Remove(packetName);
+        }
+
+        public HashSet<string> GetOutPacketDropSet()
+        {
+            return new HashSet<string>(m_outPacketsToDrop);
+        }
+
+        private HashSet<string> m_inPacketsToDrop;
+
+        public bool AddInPacketToDropSet(string packetName)
+        {
+            if (m_inPacketsToDrop == null)
+                m_inPacketsToDrop = new HashSet<string>();
+
+            return m_inPacketsToDrop.Add(packetName);
+        }
+
+        public bool RemoveInPacketFromDropSet(string packetName)
+        {
+            if (m_inPacketsToDrop == null)
+                return false;
+
+            return m_inPacketsToDrop.Remove(packetName);
+        }
+
+        public HashSet<string> GetInPacketDropSet()
+        {
+            return new HashSet<string>(m_inPacketsToDrop);
         }
     }
 }

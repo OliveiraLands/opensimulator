@@ -60,11 +60,16 @@ namespace OpenSim.Region.CoreModules.World.WorldMap
     public class WorldMapModule : INonSharedRegionModule, IWorldMapModule
     {
         private static readonly ILog m_log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
+#pragma warning disable 414
         private static string LogHeader = "[WORLD MAP]";
+#pragma warning restore 414
 
         private static readonly string DEFAULT_WORLD_MAP_EXPORT_PATH = "exportmap.jpg";
         private static readonly UUID STOP_UUID = UUID.Random();
         private static readonly string m_mapLayerPath = "0001/";
+
+        private IMapImageGenerator m_mapImageGenerator;
+        private IMapImageUploadModule m_mapImageServiceModule;
 
         private OpenSim.Framework.BlockingQueue<MapRequestState> requests = new OpenSim.Framework.BlockingQueue<MapRequestState>();
 
@@ -98,7 +103,7 @@ namespace OpenSim.Region.CoreModules.World.WorldMap
                 = Util.GetConfigVarFromSections<int>(config, "BlacklistTimeout", configSections, 10 * 60) * 1000;
         }
 
-        public virtual void AddRegion (Scene scene)
+        public virtual void AddRegion(Scene scene)
         {
             if (!m_Enabled)
                 return;
@@ -142,8 +147,10 @@ namespace OpenSim.Region.CoreModules.World.WorldMap
                 return;
 
             m_ServiceThrottle = scene.RequestModuleInterface<IServiceThrottleModule>();
-        }
 
+            m_mapImageGenerator = m_scene.RequestModuleInterface<IMapImageGenerator>();
+            m_mapImageServiceModule = m_scene.RequestModuleInterface<IMapImageUploadModule>();
+        }
 
         public virtual void Close()
         {
@@ -1029,7 +1036,7 @@ namespace OpenSim.Region.CoreModules.World.WorldMap
                     block.X = (ushort)minX;
                     block.Y = (ushort)minY;
                     block.Access = (byte)SimAccess.Down; // means 'simulator is offline'
-                    // block.Access = (byte)SimAccess.NonExistant;
+                    // block.Access = (byte)SimAccess.NonExistent;
                     response.Add(block);
                 }
                 // The lower 16 bits are an unsigned int16
@@ -1048,8 +1055,8 @@ namespace OpenSim.Region.CoreModules.World.WorldMap
             List<GridRegion> regions = m_scene.GridService.GetRegionRange(m_scene.RegionInfo.ScopeID,
                         (int)Util.RegionToWorldLoc((uint)(minX - 4)), (int)Util.RegionToWorldLoc((uint)(maxX + 4)),
                         (int)Util.RegionToWorldLoc((uint)(minY - 4)), (int)Util.RegionToWorldLoc((uint)(maxY + 4)) );
-            m_log.DebugFormat("{0} GetAndSendBlocks. min=<{1},{2}>, max=<{3},{4}>, cntFound={5}",
-                                        LogHeader, minX, minY, maxX, maxY, regions.Count);
+            //m_log.DebugFormat("{0} GetAndSendBlocks. min=<{1},{2}>, max=<{3},{4}>, cntFound={5}",
+            //                            LogHeader, minX, minY, maxX, maxY, regions.Count);
             foreach (GridRegion r in regions)
             {
                 // Version 2 viewers can handle the larger regions
@@ -1064,7 +1071,7 @@ namespace OpenSim.Region.CoreModules.World.WorldMap
         }
 
         // Fill a passed MapBlockData from a GridRegion
-        protected MapBlockData MapBlockFromGridRegion(GridRegion r, uint flag)
+        public MapBlockData MapBlockFromGridRegion(GridRegion r, uint flag)
         {
             MapBlockData block = new MapBlockData();
 
@@ -1090,7 +1097,7 @@ namespace OpenSim.Region.CoreModules.World.WorldMap
             return block;
         }
 
-        protected List<MapBlockData> Map2BlockFromGridRegion(GridRegion r, uint flag)
+        public List<MapBlockData> Map2BlockFromGridRegion(GridRegion r, uint flag)
         {
             List<MapBlockData> blocks = new List<MapBlockData>();
             MapBlockData block = new MapBlockData();
@@ -1121,32 +1128,6 @@ namespace OpenSim.Region.CoreModules.World.WorldMap
                 block.SizeX = (ushort)r.RegionSizeX;
                 block.SizeY = (ushort)r.RegionSizeY;
                 blocks.Add(block);
-                // If these are larger than legacy regions, create fake map entries for the covered
-                //    regions. The map system only does legacy sized regions so we have to fake map
-                //    entries for all the covered regions.
-                if (r.RegionSizeX > Constants.RegionSize || r.RegionSizeY > Constants.RegionSize)
-                {
-                    for (int x = 0; x < r.RegionSizeX / Constants.RegionSize; x++)
-                    {
-                        for (int y = 0; y < r.RegionSizeY / Constants.RegionSize; y++)
-                        {
-                            if (x == 0 && y == 0)
-                                continue;
-                            block = new MapBlockData
-                                        {
-                                            Access = r.Access,
-                                            MapImageId = r.TerrainImage,
-                                            Name = r.RegionName,
-                                            X = (ushort)((r.RegionLocX / Constants.RegionSize) + x),
-                                            Y = (ushort)((r.RegionLocY / Constants.RegionSize) + y),
-                                            SizeX = (ushort)r.RegionSizeX,
-                                            SizeY = (ushort)r.RegionSizeY
-                                        };
-                            //Child piece, so ignore it
-                            blocks.Add(block);
-                        }
-                    }
-                }
             }
             return blocks;
         }
@@ -1171,7 +1152,7 @@ namespace OpenSim.Region.CoreModules.World.WorldMap
 
             if (myMapImageJPEG.Length == 0)
             {
-                MemoryStream imgstream = new MemoryStream();
+                MemoryStream imgstream = null;
                 Bitmap mapTexture = new Bitmap(1,1);
                 ManagedImage managedImage;
                 Image image = (Image)mapTexture;
@@ -1218,10 +1199,7 @@ namespace OpenSim.Region.CoreModules.World.WorldMap
                         image.Dispose();
 
                     if (imgstream != null)
-                    {
-                        imgstream.Close();
                         imgstream.Dispose();
-                    }
                 }
             }
             else
@@ -1342,7 +1320,17 @@ namespace OpenSim.Region.CoreModules.World.WorldMap
             if (consoleScene != null && consoleScene != m_scene)
                 return;
 
-            GenerateMaptile();
+            if (m_mapImageGenerator == null)
+            {
+                Console.WriteLine("No map image generator available for {0}", m_scene.Name);
+                return;
+            }
+
+            using (Bitmap mapbmp = m_mapImageGenerator.CreateMapTile())
+            {
+                GenerateMaptile(mapbmp);
+                m_mapImageServiceModule.UploadMapTile(m_scene, mapbmp);
+            }
         }
 
         public OSD HandleRemoteMapItemRequest(string path, OSD request, string endpoint)
@@ -1467,20 +1455,29 @@ namespace OpenSim.Region.CoreModules.World.WorldMap
 
         public void GenerateMaptile()
         {
-            // Cannot create a map for a nonexistant heightmap
+            // Cannot create a map for a nonexistent heightmap
             if (m_scene.Heightmap == null)
                 return;
 
-            //create a texture asset of the terrain
-            IMapImageGenerator terrain = m_scene.RequestModuleInterface<IMapImageGenerator>();
-            if (terrain == null)
-                return;
+            m_log.DebugFormat("[WORLD MAP]: Generating map image for {0}", m_scene.Name);
 
-            m_log.DebugFormat("[WORLD MAP]: Generating map image for {0}", m_scene.RegionInfo.RegionName);
+            using (Bitmap mapbmp = m_mapImageGenerator.CreateMapTile())
+                GenerateMaptile(mapbmp);
+        }
 
-            byte[] data = terrain.WriteJpeg2000Image();
-            if (data == null)
+        private void GenerateMaptile(Bitmap mapbmp)
+        {
+            byte[] data;
+
+            try
+            {
+                data = OpenJPEG.EncodeFromImage(mapbmp, true);
+            }
+            catch (Exception e) // LEGIT: Catching problems caused by OpenJPEG p/invoke
+            {
+                m_log.Error("[WORLD MAP]: Failed generating terrain map: " + e);
                 return;
+            }
 
             byte[] overlay = GenerateOverlay();
 
@@ -1578,12 +1575,20 @@ namespace OpenSim.Region.CoreModules.World.WorldMap
 
         private Byte[] GenerateOverlay()
         {
-            using (Bitmap overlay = new Bitmap(256, 256))
+            // These need to be ints for bitmap generation
+            int regionSizeX = (int)m_scene.RegionInfo.RegionSizeX;
+            int regionSizeY = (int)m_scene.RegionInfo.RegionSizeY;
+
+            int landTileSize = LandManagementModule.LandUnit;
+            int regionLandTilesX = regionSizeX / landTileSize;
+            int regionLandTilesY = regionSizeY / landTileSize;
+
+            using (Bitmap overlay = new Bitmap(regionSizeX, regionSizeY))
             {
-                bool[,] saleBitmap = new bool[64, 64];
-                for (int x = 0 ; x < 64 ; x++)
+                bool[,] saleBitmap = new bool[regionLandTilesX, regionLandTilesY];
+                for (int x = 0; x < regionLandTilesX; x++)
                 {
-                    for (int y = 0 ; y < 64 ; y++)
+                    for (int y = 0; y < regionLandTilesY; y++)
                         saleBitmap[x, y] = false;
                 }
 
@@ -1596,8 +1601,7 @@ namespace OpenSim.Region.CoreModules.World.WorldMap
                 using (Graphics g = Graphics.FromImage(overlay))
                 {
                     using (SolidBrush transparent = new SolidBrush(background))
-                        g.FillRectangle(transparent, 0, 0, 256, 256);
-
+                        g.FillRectangle(transparent, 0, 0, regionSizeX, regionSizeY);
 
                     foreach (ILandObject land in parcels)
                     {
@@ -1620,12 +1624,16 @@ namespace OpenSim.Region.CoreModules.World.WorldMap
 
                     using (SolidBrush yellow = new SolidBrush(Color.FromArgb(255, 249, 223, 9)))
                     {
-                        for (int x = 0 ; x < 64 ; x++)
+                        for (int x = 0 ; x < regionLandTilesX ; x++)
                         {
-                            for (int y = 0 ; y < 64 ; y++)
+                            for (int y = 0 ; y < regionLandTilesY ; y++)
                             {
                                 if (saleBitmap[x, y])
-                                    g.FillRectangle(yellow, x * 4, 252 - (y * 4), 4, 4);
+                                    g.FillRectangle(
+                                        yellow, x * landTileSize, 
+                                        regionSizeX - landTileSize - (y * landTileSize), 
+                                        landTileSize, 
+                                        landTileSize);
                             }
                         }
                     }

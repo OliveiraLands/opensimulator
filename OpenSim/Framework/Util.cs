@@ -138,7 +138,7 @@ namespace OpenSim.Framework
         }
 
         private static uint nextXferID = 5000;
-        private static Random randomClass = new Random();
+        private static Random randomClass = new ThreadSafeRandom();
 
         // Get a list of invalid file characters (OS dependent)
         private static string regexInvalidFileChars = "[" + new String(Path.GetInvalidFileNameChars()) + "]";
@@ -507,6 +507,19 @@ namespace OpenSim.Framework
             }
 
             return sb.ToString();
+        }
+
+        public static byte[] DocToBytes(XmlDocument doc)
+        {
+            using (MemoryStream ms = new MemoryStream())
+            using (XmlTextWriter xw = new XmlTextWriter(ms, null))
+            {
+                xw.Formatting = Formatting.Indented;
+                doc.WriteTo(xw);
+                xw.Flush();
+
+                return ms.ToArray();
+            }
         }
 
         /// <summary>
@@ -1307,46 +1320,6 @@ namespace OpenSim.Framework
             return ret;
         }
 
-        public static string Compress(string text)
-        {
-            byte[] buffer = Util.UTF8.GetBytes(text);
-            MemoryStream memory = new MemoryStream();
-            using (GZipStream compressor = new GZipStream(memory, CompressionMode.Compress, true))
-            {
-                compressor.Write(buffer, 0, buffer.Length);
-            }
-
-            memory.Position = 0;
-           
-            byte[] compressed = new byte[memory.Length];
-            memory.Read(compressed, 0, compressed.Length);
-
-            byte[] compressedBuffer = new byte[compressed.Length + 4];
-            Buffer.BlockCopy(compressed, 0, compressedBuffer, 4, compressed.Length);
-            Buffer.BlockCopy(BitConverter.GetBytes(buffer.Length), 0, compressedBuffer, 0, 4);
-            return Convert.ToBase64String(compressedBuffer);
-        }
-
-        public static string Decompress(string compressedText)
-        {
-            byte[] compressedBuffer = Convert.FromBase64String(compressedText);
-            using (MemoryStream memory = new MemoryStream())
-            {
-                int msgLength = BitConverter.ToInt32(compressedBuffer, 0);
-                memory.Write(compressedBuffer, 4, compressedBuffer.Length - 4);
-
-                byte[] buffer = new byte[msgLength];
-
-                memory.Position = 0;
-                using (GZipStream decompressor = new GZipStream(memory, CompressionMode.Decompress))
-                {
-                    decompressor.Read(buffer, 0, buffer.Length);
-                }
-
-                return Util.UTF8.GetString(buffer);
-            }
-        }
-
         /// <summary>
         /// Copy data from one stream to another, leaving the read position of both streams at the beginning.
         /// </summary>
@@ -1964,10 +1937,15 @@ namespace OpenSim.Framework
         {
             if (maxThreads < 2)
                 throw new ArgumentOutOfRangeException("maxThreads", "maxThreads must be greater than 2");
+
             if (minThreads > maxThreads || minThreads < 2)
                 throw new ArgumentOutOfRangeException("minThreads", "minThreads must be greater than 2 and less than or equal to maxThreads");
+
             if (m_ThreadPool != null)
-                throw new InvalidOperationException("SmartThreadPool is already initialized");
+            {
+                m_log.Warn("SmartThreadPool is already initialized.  Ignoring request.");
+                return;
+            }
 
             STPStartInfo startInfo = new STPStartInfo();
             startInfo.ThreadPoolName = "Util";
@@ -2022,7 +2000,7 @@ namespace OpenSim.Framework
             {
                 ThreadFuncNum = threadFuncNum;
                 this.context = context;
-                LogThread = true;
+                LogThread = false;
                 Thread = null;
                 Running = false;
                 Aborted = false;
@@ -2202,6 +2180,12 @@ namespace OpenSim.Framework
                             (context == null) ? "" : ("(" + context + ") "),
                             (LogThreadPool >= 2) ? full : partial);
                     }
+                }
+                else
+                {
+                    // Since we didn't log "Queue threadfunc", don't log "Run threadfunc" or "End threadfunc" either.
+                    // Those log lines aren't useful when we don't know which function is running in the thread.
+                    threadInfo.LogThread = false;
                 }
 
                 switch (FireAndForgetMethod)
@@ -2416,36 +2400,6 @@ namespace OpenSim.Framework
         #endregion FireAndForget Threading Pattern
 
         /// <summary>
-        /// Run the callback on a different thread, outside the thread pool. This is used for tasks
-        /// that may take a long time.
-        /// </summary>
-        public static void RunThreadNoTimeout(WaitCallback callback, string name, object obj)
-        {
-            if (FireAndForgetMethod == FireAndForgetMethod.RegressionTest)
-            {
-                Culture.SetCurrentCulture();
-                callback(obj);
-                return;
-            }
-
-            Thread t = new Thread(delegate()
-            {
-                try
-                {
-                    Culture.SetCurrentCulture();
-                    callback(obj);
-                }
-                catch (Exception e)
-                {
-                    m_log.Error("Exception in thread " + name, e);
-                }
-            });
-            
-            t.Name = name;
-            t.Start();
-        }
-
-        /// <summary>
         /// Environment.TickCount is an int but it counts all 32 bits so it goes positive
         /// and negative every 24.9 days. This trims down TickCount so it doesn't wrap
         /// for the callers. 
@@ -2621,7 +2575,7 @@ namespace OpenSim.Framework
         }
 
         #region Xml Serialization Utilities
-        public static bool ReadBoolean(XmlTextReader reader)
+        public static bool ReadBoolean(XmlReader reader)
         {
             // AuroraSim uses "int" for some fields that are boolean in OpenSim, e.g. "PassCollisions". Don't fail because of this.
             reader.ReadStartElement();
@@ -2632,7 +2586,7 @@ namespace OpenSim.Framework
             return result;
         }
 
-        public static UUID ReadUUID(XmlTextReader reader, string name)
+        public static UUID ReadUUID(XmlReader reader, string name)
         {
             UUID id;
             string idStr;
@@ -2651,7 +2605,7 @@ namespace OpenSim.Framework
             return id;
         }
 
-        public static Vector3 ReadVector(XmlTextReader reader, string name)
+        public static Vector3 ReadVector(XmlReader reader, string name)
         {
             Vector3 vec;
 
@@ -2664,7 +2618,7 @@ namespace OpenSim.Framework
             return vec;
         }
 
-        public static Quaternion ReadQuaternion(XmlTextReader reader, string name)
+        public static Quaternion ReadQuaternion(XmlReader reader, string name)
         {
             Quaternion quat = new Quaternion();
 
@@ -2693,7 +2647,7 @@ namespace OpenSim.Framework
             return quat;
         }
 
-        public static T ReadEnum<T>(XmlTextReader reader, string name)
+        public static T ReadEnum<T>(XmlReader reader, string name)
         {
             string value = reader.ReadElementContentAsString(name, String.Empty);
             // !!!!! to deal with flags without commas

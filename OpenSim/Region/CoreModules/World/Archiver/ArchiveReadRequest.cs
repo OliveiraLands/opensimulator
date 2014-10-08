@@ -36,6 +36,7 @@ using System.Xml;
 using log4net;
 using OpenMetaverse;
 using OpenSim.Framework;
+using OpenSim.Framework.Monitoring;
 using OpenSim.Framework.Serialization;
 using OpenSim.Framework.Serialization.External;
 using OpenSim.Region.CoreModules.World.Terrain;
@@ -371,7 +372,7 @@ namespace OpenSim.Region.CoreModules.World.Archiver
             // Start the scripts. We delayed this because we want the OAR to finish loading ASAP, so
             // that users can enter the scene. If we allow the scripts to start in the loop above
             // then they significantly increase the time until the OAR finishes loading.
-            Util.RunThreadNoTimeout(delegate(object o)
+            Watchdog.RunInThread(o =>
             {
                 Thread.Sleep(15000);
                 m_log.Info("[ARCHIVER]: Starting scripts in scene objects");
@@ -386,7 +387,7 @@ namespace OpenSim.Region.CoreModules.World.Archiver
 
                     sceneContext.SceneObjects.Clear();
                 }
-            }, "ReadArchiveStartScripts", null);
+            }, string.Format("ReadArchiveStartScripts (request {0})", m_requestId), null);
 
             m_log.InfoFormat("[ARCHIVER]: Successfully loaded archive");
 
@@ -918,17 +919,18 @@ namespace OpenSim.Region.CoreModules.World.Archiver
         {
             ITerrainModule terrainModule = scene.RequestModuleInterface<ITerrainModule>();
 
-            MemoryStream ms = new MemoryStream(data);
-            if (m_displacement != Vector3.Zero || m_rotation != 0f)
+            using (MemoryStream ms = new MemoryStream(data))
             {
-                Vector2 rotationCenter = new Vector2(m_rotationCenter.X, m_rotationCenter.Y);
-                terrainModule.LoadFromStream(terrainPath, m_displacement, m_rotation, rotationCenter, ms);
+                if (m_displacement != Vector3.Zero || m_rotation != 0f)
+                {
+                    Vector2 rotationCenter = new Vector2(m_rotationCenter.X, m_rotationCenter.Y);
+                    terrainModule.LoadFromStream(terrainPath, m_displacement, m_rotation, rotationCenter, ms);
+                }
+                else
+                {
+                    terrainModule.LoadFromStream(terrainPath, ms);
+                }
             }
-            else
-            {
-                terrainModule.LoadFromStream(terrainPath, ms);
-            }
-            ms.Close();
 
             m_log.DebugFormat("[ARCHIVER]: Restored terrain {0}", terrainPath);
 

@@ -86,6 +86,12 @@ namespace OpenSim.Region.ScriptEngine.XEngine
         /// </summary>
         private int m_StartDelay;
 
+        /// <summary>
+        /// Are we stopping scripts co-operatively by inserting checks in them at C# compile time (true) or aborting
+        /// their threads (false)?
+        /// </summary>
+        private bool m_coopTermination;
+
         private int m_IdleTimeout;
         private int m_StackSize;
         private int m_SleepTime;
@@ -240,12 +246,13 @@ namespace OpenSim.Region.ScriptEngine.XEngine
             m_ScriptConfig = configSource.Configs["XEngine"];
             m_ConfigSource = configSource;
 
-            string rawScriptStopStrategy = m_ScriptConfig.GetString("ScriptStopStrategy", "abort");
+            string rawScriptStopStrategy = m_ScriptConfig.GetString("ScriptStopStrategy", "coop");
 
             m_log.InfoFormat("[XEngine]: Script stop strategy is {0}", rawScriptStopStrategy);
 
             if (rawScriptStopStrategy == "co-op")
             {
+                m_coopTermination = true;
                 ScriptClassName = "XEngineScript";
                 ScriptBaseClassName = typeof(XEngineScriptBase).FullName;
                 ScriptBaseClassParameters = typeof(XEngineScriptBase).GetConstructor(new Type[] { typeof(WaitHandle) }).GetParameters();
@@ -389,7 +396,7 @@ namespace OpenSim.Region.ScriptEngine.XEngine
                 (module, cmdparams) => HandleScriptsAction(cmdparams, HandleStartScript));
 
             MainConsole.Instance.Commands.AddCommand(
-                "Scripts", false, "debug scripts log", "debug scripts log <item-id> <log-level>", "Extra debug logging for a script",
+                "Debug", false, "debug scripts log", "debug scripts log <item-id> <log-level>", "Extra debug logging for a particular script.",
                 "Activates or deactivates extra debug logging for the given script.\n"
                     + "Level == 0, deactivate extra debug logging.\n"
                     + "Level >= 1, log state changes.\n"
@@ -961,8 +968,6 @@ namespace OpenSim.Region.ScriptEngine.XEngine
                             if (restOfFirstLine.StartsWith("c#")
                                 || restOfFirstLine.StartsWith("vb")
                                 || restOfFirstLine.StartsWith("lsl")
-                                || restOfFirstLine.StartsWith("js")
-                                || restOfFirstLine.StartsWith("yp")
                                 || restOfFirstLine.Length == 0)
                                 warnRunningInXEngine = true;
 
@@ -1139,7 +1144,7 @@ namespace OpenSim.Region.ScriptEngine.XEngine
 
             ScenePresence presence = m_Scene.GetScenePresence(item.OwnerID);
 
-            string assembly = "";
+            string assemblyPath = "";
 
             Culture.SetCurrentCulture();
 
@@ -1151,12 +1156,12 @@ namespace OpenSim.Region.ScriptEngine.XEngine
                 {
                     lock (m_AddingAssemblies)
                     {
-                        m_Compiler.PerformScriptCompile(script, assetID.ToString(), item.OwnerID, out assembly, out linemap);
+                        m_Compiler.PerformScriptCompile(script, assetID.ToString(), item.OwnerID, out assemblyPath, out linemap);
                         
-                        if (!m_AddingAssemblies.ContainsKey(assembly)) {
-                            m_AddingAssemblies[assembly] = 1;
+                        if (!m_AddingAssemblies.ContainsKey(assemblyPath)) {
+                            m_AddingAssemblies[assemblyPath] = 1;
                         } else {
-                            m_AddingAssemblies[assembly]++;
+                            m_AddingAssemblies[assemblyPath]++;
                         }
                     }
 
@@ -1301,19 +1306,43 @@ namespace OpenSim.Region.ScriptEngine.XEngine
                             m_ScriptFailCount++;
                             lock (m_AddingAssemblies) 
                             {
-                                m_AddingAssemblies[assembly]--;
+                                m_AddingAssemblies[assemblyPath]--;
                             }
                             return false;
                         }
                     }
                     m_DomainScripts[appDomain].Add(itemID);
 
+                    Assembly scriptAssembly = m_AppDomains[appDomain].Load(Path.GetFileNameWithoutExtension(assemblyPath));
+                    bool recompile = false;
+
+                    if (m_coopTermination)
+                    {
+                        Type scriptType = scriptAssembly.GetType("SecondLife.XEngineScript");
+
+                        if (scriptType == null)
+                            recompile = true;
+                    }
+                    else
+                    {
+                        Type scriptType = scriptAssembly.GetType("SecondLife.Script");
+
+                        if (scriptType == null)
+                            recompile = true;
+                    }
+
+                    // If we are loading all scripts into the same AppDomain, then we can't reload the DLL in this
+                    // simulator session if the script halt strategy has been changed.  Instead, we'll continue with
+                    // the existing DLL and the new one will be used in the next simulator session.
+                    if (recompile)
+                        m_Compiler.PerformScriptCompile(script, assetID.ToString(), item.OwnerID, true, out assemblyPath, out linemap);
+
                     instance = new ScriptInstance(this, part,
                                                   item,
                                                   startParam, postOnRez,
                                                   m_MaxScriptQueue);
 
-                    if (!instance.Load(m_AppDomains[appDomain], assembly, stateSource))
+                    if (!instance.Load(m_AppDomains[appDomain], scriptAssembly, stateSource))
                         return false;
 
 //                    if (DebugLevel >= 1)
@@ -1345,11 +1374,11 @@ namespace OpenSim.Region.ScriptEngine.XEngine
             }
 
             if (!m_Assemblies.ContainsKey(assetID))
-                m_Assemblies[assetID] = assembly;
+                m_Assemblies[assetID] = assemblyPath;
 
             lock (m_AddingAssemblies) 
             {
-                m_AddingAssemblies[assembly]--;
+                m_AddingAssemblies[assemblyPath]--;
             }
 
             if (instance != null) 

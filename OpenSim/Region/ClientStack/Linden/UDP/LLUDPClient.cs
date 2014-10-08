@@ -76,6 +76,34 @@ namespace OpenSim.Region.ClientStack.LindenUDP
         /// or removed, this number must also change</summary>
         const int THROTTLE_CATEGORY_COUNT = 8;
 
+        /// <summary>
+        /// Controls whether information is logged about each outbound packet immediately before it is sent.  For debug purposes.
+        /// </summary>
+        /// <remarks>Any level above 0 will turn on logging.</remarks>
+        public int DebugDataOutLevel { get; set; }
+
+        /// <summary>
+        /// Controls whether information is logged about each outbound packet immediately before it is sent.  For debug purposes.
+        /// </summary>
+        /// <remarks>Any level above 0 will turn on logging.</remarks>
+        public int ThrottleDebugLevel 
+        { 
+            get
+            {
+                return m_throttleDebugLevel;
+            }
+
+            set
+            {
+                m_throttleDebugLevel = value;
+                m_throttleClient.DebugLevel = m_throttleDebugLevel;
+                m_throttleCategory.DebugLevel = m_throttleDebugLevel;
+                foreach (TokenBucket tb in m_throttleCategories)
+                    tb.DebugLevel = m_throttleDebugLevel;
+            }
+        }
+        private int m_throttleDebugLevel;
+
         /// <summary>Fired when updated networking stats are produced for this client</summary>
         public event PacketStats OnPacketStats;
         /// <summary>Fired when the queue for a packet category is empty. This event can be
@@ -201,9 +229,17 @@ namespace OpenSim.Region.ClientStack.LindenUDP
                 m_maxRTO = maxRTO;
 
             // Create a token bucket throttle for this client that has the scene token bucket as a parent
-            m_throttleClient = new AdaptiveTokenBucket(parentThrottle, rates.Total, rates.AdaptiveThrottlesEnabled);
-            // Create a token bucket throttle for the total categary with the client bucket as a throttle
-            m_throttleCategory = new TokenBucket(m_throttleClient, 0);
+            m_throttleClient 
+                = new AdaptiveTokenBucket(
+                    string.Format("adaptive throttle for {0} in {1}", AgentID, server.Scene.Name), 
+                    parentThrottle, rates.Total, rates.AdaptiveThrottlesEnabled);
+
+            // Create a token bucket throttle for the total category with the client bucket as a throttle
+            m_throttleCategory 
+                = new TokenBucket(
+                    string.Format("total throttle for {0} in {1}", AgentID, server.Scene.Name), 
+                    m_throttleClient, 0);
+
             // Create an array of token buckets for this clients different throttle categories
             m_throttleCategories = new TokenBucket[THROTTLE_CATEGORY_COUNT];
 
@@ -215,8 +251,12 @@ namespace OpenSim.Region.ClientStack.LindenUDP
 
                 // Initialize the packet outboxes, where packets sit while they are waiting for tokens
                 m_packetOutboxes[i] = new OpenSim.Framework.LocklessQueue<OutgoingPacket>();
+
                 // Initialize the token buckets that control the throttling for each category
-                m_throttleCategories[i] = new TokenBucket(m_throttleCategory, rates.GetRate(type));
+                m_throttleCategories[i]
+                    = new TokenBucket(
+                        string.Format("{0} throttle for {1} in {2}", type, AgentID, server.Scene.Name), 
+                    m_throttleCategory, rates.GetRate(type));
             }
 
             // Default the retransmission timeout to one second
@@ -262,6 +302,7 @@ namespace OpenSim.Region.ClientStack.LindenUDP
             m_info.assetThrottle = (int)m_throttleCategories[(int)ThrottleOutPacketType.Asset].DripRate;
             m_info.textureThrottle = (int)m_throttleCategories[(int)ThrottleOutPacketType.Texture].DripRate;
             m_info.totalThrottle = (int)m_throttleCategory.DripRate;
+            m_info.maxThrottle = (int)m_throttleClient.MaxDripRate;
 
             return m_info;
         }
@@ -364,8 +405,11 @@ namespace OpenSim.Region.ClientStack.LindenUDP
             texture = (int)((1 - m_cannibalrate) * texture);
             
             //int total = resend + land + wind + cloud + task + texture + asset;
-            //m_log.DebugFormat("[LLUDPCLIENT]: {0} is setting throttles. Resend={1}, Land={2}, Wind={3}, Cloud={4}, Task={5}, Texture={6}, Asset={7}, Total={8}",
-            //                  AgentID, resend, land, wind, cloud, task, texture, asset, total);
+
+            if (ThrottleDebugLevel > 0)
+                m_log.DebugFormat(
+                    "[LLUDPCLIENT]: {0} is setting throttles. Resend={1}, Land={2}, Wind={3}, Cloud={4}, Task={5}, Texture={6}, Asset={7}",
+                    AgentID, m_udpServer.Scene.Name, resend, land, wind, cloud, task, texture, asset);
 
             // Update the token buckets with new throttle values
             TokenBucket bucket;
@@ -649,8 +693,15 @@ namespace OpenSim.Region.ClientStack.LindenUDP
 
                 if (HasUpdates(m_categories))
                 {
-                    // Asynchronously run the callback
-                    Util.FireAndForget(FireQueueEmpty, categories);
+                    if (!m_udpServer.OqrEngine.IsRunning)
+                    {
+                        // Asynchronously run the callback
+                        Util.FireAndForget(FireQueueEmpty, categories);
+                    }
+                    else
+                    {
+                        m_udpServer.OqrEngine.QueueRequest(this, categories);
+                    }
                 }
                 else
                 {
@@ -669,8 +720,10 @@ namespace OpenSim.Region.ClientStack.LindenUDP
         /// <param name="o">Throttle categories to fire the callback for,
         /// stored as an object to match the WaitCallback delegate
         /// signature</param>
-        private void FireQueueEmpty(object o)
+        public void FireQueueEmpty(object o)
         {
+//            m_log.DebugFormat("[LLUDPCLIENT]: FireQueueEmpty for {0} in {1}", AgentID, m_udpServer.Scene.Name);
+
 //            int start = Environment.TickCount & Int32.MaxValue;
 //            const int MIN_CALLBACK_MS = 30;
 

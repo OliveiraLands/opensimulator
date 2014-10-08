@@ -40,6 +40,7 @@ using OpenSim.Server.Base;
 using OpenSim.Services.Interfaces;
 using OpenSim.Framework;
 using OpenSim.Framework.Servers.HttpServer;
+using OpenSim.Framework.ServiceAuth;
 using OpenMetaverse;
 
 namespace OpenSim.Server.Handlers.Presence
@@ -50,8 +51,8 @@ namespace OpenSim.Server.Handlers.Presence
 
         private IPresenceService m_PresenceService;
 
-        public PresenceServerPostHandler(IPresenceService service) :
-                base("POST", "/presence")
+        public PresenceServerPostHandler(IPresenceService service, IServiceAuth auth) :
+                base("POST", "/presence", auth)
         {
             m_PresenceService = service;
         }
@@ -264,7 +265,7 @@ namespace OpenSim.Server.Handlers.Presence
 
             rootElement.AppendChild(result);
 
-            return DocToBytes(doc);
+            return Util.DocToBytes(doc);
         }
 
         private byte[] FailureResult()
@@ -286,18 +287,7 @@ namespace OpenSim.Server.Handlers.Presence
 
             rootElement.AppendChild(result);
 
-            return DocToBytes(doc);
-        }
-
-        private byte[] DocToBytes(XmlDocument doc)
-        {
-            MemoryStream ms = new MemoryStream();
-            XmlTextWriter xw = new XmlTextWriter(ms, null);
-            xw.Formatting = Formatting.Indented;
-            doc.WriteTo(xw);
-            xw.Flush();
-
-            return ms.ToArray();
+            return Util.DocToBytes(doc);
         }
 
     }

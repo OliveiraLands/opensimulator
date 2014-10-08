@@ -387,7 +387,14 @@ namespace OpenSim.Region.CoreModules.Avatar.Attachments
             if (!Enabled)
                 return false;
 
-            return AttachObjectInternal(sp, group, attachmentPt, silent, addToInventory, false, append);
+            group.DetachFromBackup();
+
+            bool success = AttachObjectInternal(sp, group, attachmentPt, silent, addToInventory, false, append);
+
+            if (!success)
+                group.AttachToBackup();
+
+            return success;
         }
 
         /// <summary>
@@ -774,15 +781,10 @@ namespace OpenSim.Region.CoreModules.Avatar.Attachments
                         (sbyte)AssetType.Object,
                         Utils.StringToBytes(sceneObjectXml),
                         sp.UUID);
-                    m_scene.AssetService.Store(asset);
 
-                    item.AssetID = asset.FullID;
-                    item.Description = asset.Description;
-                    item.Name = asset.Name;
-                    item.AssetType = asset.Type;
-                    item.InvType = (int)InventoryType.Object;
+                    IInventoryAccessModule invAccess = m_scene.RequestModuleInterface<IInventoryAccessModule>();
 
-                    m_scene.InventoryService.UpdateItem(item);
+                    invAccess.UpdateInventoryItemAsset(sp.UUID, item, asset);
 
                     // If the name of the object has been changed whilst attached then we want to update the inventory
                     // item in the viewer.
@@ -819,8 +821,6 @@ namespace OpenSim.Region.CoreModules.Avatar.Attachments
                 m_log.DebugFormat(
                     "[ATTACHMENTS MODULE]: Adding attachment {0} to avatar {1} in pt {2} pos {3} {4}",
                     so.Name, sp.Name, attachmentpoint, attachOffset, so.RootPart.AttachedPos);
-
-            so.DetachFromBackup();
 
             // Remove from database and parcel prim count
             m_scene.DeleteFromStorage(so.UUID);

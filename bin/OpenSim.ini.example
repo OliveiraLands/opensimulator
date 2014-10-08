@@ -51,6 +51,19 @@
     ;; \\ - substitute \
     ; ConsolePrompt = "Region (\R) "
 
+    ;# {ConsoleHistoryFileEnabled} {} {Save console commands to a history file?} {true false} true
+    ;; Console commands can be saved to a file, so the command history persists after a restart. (default is false)
+    ; ConsoleHistoryFileEnabled = true
+
+    ;# {ConsoleHistoryFile} {} {Filename in which to save history} {} OpenSimConsoleHistory.txt
+    ;; The history file can be just a filename (relative to OpenSim's bin/ directory
+    ;; or it can be a full path to somewhere else. (default is OpenSimConsoleHistory.txt in bin/)
+    ; ConsoleHistoryFile = "OpenSimConsoleHistory.txt"
+
+    ;# {ConsoleHistoryFileLines} {} {How many lines of history to save?} {} 100
+    ;; How many lines of command history should we keep? (default is 100)
+    ; ConsoleHistoryFileLines = 100
+
     ;# {save_crashes} {} {Save crashes to disk?} {true false} false
     ;; Set this to true if you want to log crashes to disk
     ;; this can be useful when submitting bug reports.
@@ -210,7 +223,7 @@
     ;; OpenDynamicsEngine was the previous default physics engine in OpenSimulator 0.7.6.1 and before.  
     ;; It continues to provide a workable physics implementation.  It does not currently support varregions.
     ;; basicphysics effectively does not model physics at all, making all objects phantom.   
-    ;; Default is OpenDynamicsEngine
+    ;; Default is BulletSim
     ; physics = OpenDynamicsEngine
     ; physics = BulletSim
     ; physics = basicphysics
@@ -470,6 +483,16 @@
     ;; web server
     ; user_agent = "OpenSim LSL (Mozilla Compatible)"
 
+	;; The follow 3 variables are for HTTP Basic Authentication for the Robust services.
+	;; Use this if your central services in port 8003 need to be accessible on the Internet
+	;; but you want to protect them from unauthorized access. The username and password
+	;; here need to match the ones in the Robust service configuration.
+    ; AuthType = "BasicHttpAuthentication"
+    ; HttpAuthUsername = "some_username"
+    ; HttpAuthPassword = "some_password"
+	;;
+	;; Any of these 3 variables above can be overriden in any of the service sections.
+
 
 [XMLRPC]
     ;# {XmlRpcRouterModule} {} {Module used to route incoming llRemoteData calls} {XmlRpcRouterModule XmlRpcGridRouterModule} XmlRpcRouterModule
@@ -528,15 +551,19 @@
 
 
 [SimulatorFeatures]
-    ;# {MapImageServerURI} {} {URL for the map server} {}
-    ; Experimental new information sent in SimulatorFeatures cap for Kokua
-    ; viewers 
-    ; meant to override the MapImage and search server url given at login, and varying 
-    ; on a sim-basis.
-    ; Viewers that don't understand it, will ignore it
-    ;MapImageServerURI = "http://127.0.0.1:9000/"
+
     ;# {SearchServerURI} {} {URL of the search server} {}
+    ;; This is identical to the Robust LoginService SearchURL setting
+    ;; and will override that value if set here. The Robust setting
+    ;; provides a working default for the grid and setting here is 
+    ;; optional.
     ;SearchServerURI = "http://127.0.0.1:9000/"
+    ;# {DestinationGuideURI} {} {URL of the destination guide} {}
+    ;;
+    ;; This serves the same purpose as the DestinationGuideURI in the
+    ;; LoginService setting in the Robust server. This will override 
+    ;; the Robust setting if desired as an option.
+    ;DestinationGuideURI = "http://127.0.0.1:9000/"
 
 
 [Chat]

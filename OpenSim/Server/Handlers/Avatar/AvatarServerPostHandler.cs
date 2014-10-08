@@ -39,6 +39,7 @@ using System.Collections.Generic;
 using OpenSim.Server.Base;
 using OpenSim.Services.Interfaces;
 using OpenSim.Framework;
+using OpenSim.Framework.ServiceAuth;
 using OpenSim.Framework.Servers.HttpServer;
 using OpenMetaverse;
 
@@ -50,8 +51,8 @@ namespace OpenSim.Server.Handlers.Avatar
 
         private IAvatarService m_AvatarService;
 
-        public AvatarServerPostHandler(IAvatarService service) :
-                base("POST", "/avatar")
+        public AvatarServerPostHandler(IAvatarService service, IServiceAuth auth) :
+                base("POST", "/avatar", auth)
         {
             m_AvatarService = service;
         }
@@ -246,7 +247,7 @@ namespace OpenSim.Server.Handlers.Avatar
 
             rootElement.AppendChild(result);
 
-            return DocToBytes(doc);
+            return Util.DocToBytes(doc);
         }
 
         private byte[] FailureResult()
@@ -268,18 +269,7 @@ namespace OpenSim.Server.Handlers.Avatar
 
             rootElement.AppendChild(result);
 
-            return DocToBytes(doc);
-        }
-
-        private byte[] DocToBytes(XmlDocument doc)
-        {
-            MemoryStream ms = new MemoryStream();
-            XmlTextWriter xw = new XmlTextWriter(ms, null);
-            xw.Formatting = Formatting.Indented;
-            doc.WriteTo(xw);
-            xw.Flush();
-
-            return ms.ToArray();
+            return Util.DocToBytes(doc);
         }
 
     }

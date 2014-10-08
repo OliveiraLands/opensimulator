@@ -76,6 +76,10 @@ namespace OpenSim.Region.OptionalModules.World.AutoBackup
     /// AutoBackupBusyCheck: True/False. Default: True. 
     /// 	If True, we will only take an auto-backup if a set of conditions are met. 
     /// 	These conditions are heuristics to try and avoid taking a backup when the sim is busy.
+    /// AutoBackupSkipAssets
+    ///     If true, assets are not saved to the oar file. Considerably reduces impact on simulator when backing up. Intended for when assets db is backed up separately
+    /// AutoBackupKeepFilesForDays
+    ///     Backup files older than this value (in days) are deleted during the current backup process, 0 will disable this and keep all backup files indefinitely
     /// AutoBackupScript: String. Default: not specified (disabled). 
     /// 	File path to an executable script or binary to run when an automatic backup is taken.
     ///  The file should really be (Windows) an .exe or .bat, or (Linux/Mac) a shell script or binary.
@@ -258,6 +262,8 @@ namespace OpenSim.Region.OptionalModules.World.AutoBackup
             AutoBackupModuleState abms = this.ParseConfig(scene, false);
             m_log.Debug("[AUTO BACKUP]: Config for " + scene.RegionInfo.RegionName);
             m_log.Debug((abms == null ? "DEFAULT" : abms.ToString()));
+
+            m_states.Add(scene, abms);
         }
 
         /// <summary>
@@ -334,7 +340,7 @@ namespace OpenSim.Region.OptionalModules.World.AutoBackup
             double interval =
                 this.ResolveDouble("AutoBackupInterval", this.m_defaultState.IntervalMinutes,
                  config, regionConfig) * 60000.0;
-            if (state == null && interval != this.m_defaultState.IntervalMinutes*60000.0)
+            if (state == null && interval != this.m_defaultState.IntervalMinutes * 60000.0)
             {
                 state = new AutoBackupModuleState();
             }
@@ -412,6 +418,32 @@ namespace OpenSim.Region.OptionalModules.World.AutoBackup
                 state.BusyCheck = tmpBusyCheck;
             }
 
+            // Included Option To Skip Assets
+            bool tmpSkipAssets = ResolveBoolean("AutoBackupSkipAssets",
+                                                  this.m_defaultState.SkipAssets, config, regionConfig);
+            if (state == null && tmpSkipAssets != this.m_defaultState.SkipAssets)
+            {
+                state = new AutoBackupModuleState();
+            }
+
+            if (state != null)
+            {
+                state.SkipAssets = tmpSkipAssets;
+            }
+
+            // How long to keep backup files in days, 0 Disables this feature
+            int tmpKeepFilesForDays = ResolveInt("AutoBackupKeepFilesForDays",
+                                                  this.m_defaultState.KeepFilesForDays, config, regionConfig);
+            if (state == null && tmpKeepFilesForDays != this.m_defaultState.KeepFilesForDays)
+            {
+                state = new AutoBackupModuleState();
+            }
+
+            if (state != null)
+            {
+                state.KeepFilesForDays = tmpKeepFilesForDays;
+            }
+
             // Set file naming algorithm
             string stmpNamingType = ResolveString("AutoBackupNaming",
                                                      this.m_defaultState.NamingType.ToString(), config, regionConfig);
@@ -480,13 +512,16 @@ namespace OpenSim.Region.OptionalModules.World.AutoBackup
                     catch (Exception e)
                     {
                         m_log.Warn(
-                            "BAD NEWS. You won't be able to save backups to directory " +
+                            "[AUTO BACKUP]: BAD NEWS. You won't be able to save backups to directory " +
                             state.BackupDir +
                             " because it doesn't exist or there's a permissions issue with it. Here's the exception.",
                             e);
                     }
                 }
             }
+
+            if(state == null)
+                return m_defaultState;
 
             return state;
         }
@@ -594,7 +629,7 @@ namespace OpenSim.Region.OptionalModules.World.AutoBackup
             bool heuristicsPassed = false;
             if (!this.m_timerMap.ContainsKey((Timer) sender))
             {
-                m_log.Debug("Code-up error: timerMap doesn't contain timer " + sender);
+                m_log.Debug("[AUTO BACKUP]: Code-up error: timerMap doesn't contain timer " + sender);
             }
 
             List<IScene> tmap = this.m_timerMap[(Timer) sender];
@@ -630,6 +665,9 @@ namespace OpenSim.Region.OptionalModules.World.AutoBackup
                         }
                         this.DoRegionBackup(scene);
                     }
+
+                    // Remove Old Backups
+                    this.RemoveOldFiles(state);
                 }
             }
         }
@@ -640,7 +678,7 @@ namespace OpenSim.Region.OptionalModules.World.AutoBackup
         /// <param name="scene"></param>
         private void DoRegionBackup(IScene scene)
         {
-            if (scene.RegionStatus != RegionStatus.Up)
+            if (!scene.Ready)
             {
                 // We won't backup a region that isn't operating normally.
                 m_log.Warn("[AUTO BACKUP]: Not backing up region " + scene.RegionInfo.RegionName +
@@ -662,7 +700,41 @@ namespace OpenSim.Region.OptionalModules.World.AutoBackup
             m_pendingSaves.Add(guid, scene);
             state.LiveRequests.Add(guid, savePath);
             ((Scene) scene).EventManager.OnOarFileSaved += new EventManager.OarFileSaved(EventManager_OnOarFileSaved);
-            iram.ArchiveRegion(savePath, guid, null);
+
+            m_log.Info("[AUTO BACKUP]: Backing up region " + scene.RegionInfo.RegionName);
+
+            // Must pass options, even if dictionary is empty!
+            Dictionary<string, object> options = new Dictionary<string, object>();
+
+            if (state.SkipAssets)
+                options["noassets"] = true;
+
+            iram.ArchiveRegion(savePath, guid, options);
+        }
+
+        // For the given state, remove backup files older than the states KeepFilesForDays property
+        private void RemoveOldFiles(AutoBackupModuleState state)
+        {
+            // 0 Means Disabled, Keep Files Indefinitely
+            if (state.KeepFilesForDays > 0)
+            {
+                string[] files = Directory.GetFiles(state.BackupDir, "*.oar");
+                DateTime CuttOffDate = DateTime.Now.AddDays(0 - state.KeepFilesForDays);
+
+                foreach (string file in files)
+                {
+                    try
+                    {
+                        FileInfo fi = new FileInfo(file);
+                        if (fi.CreationTime < CuttOffDate)
+                            fi.Delete();
+                    }
+                    catch (Exception Ex)
+                    {
+                        m_log.Error("[AUTO BACKUP]: Error deleting old backup file '" + file + "': " + Ex.Message);
+                    }
+                }
+            }
         }
 
         /// <summary>

@@ -45,6 +45,8 @@ using Nwc.XmlRpc;
 using OpenMetaverse.StructuredData;
 using XMLResponseHelper = OpenSim.Framework.SynchronousRestObjectRequester.XMLResponseHelper;
 
+using OpenSim.Framework.ServiceAuth;
+
 namespace OpenSim.Framework
 {
     /// <summary>
@@ -67,7 +69,7 @@ namespace OpenSim.Framework
         /// <summary>
         /// Request number for diagnostic purposes.
         /// </summary>
-        public static int RequestNumber { get; internal set; }
+        public static int RequestNumber { get; set; }
 
         /// <summary>
         /// Control where OSD requests should be serialized per endpoint.
@@ -174,7 +176,8 @@ namespace OpenSim.Framework
 
         public static void LogOutgoingDetail(string context, Stream outputStream)
         {
-            using (StreamReader reader = new StreamReader(Util.Copy(outputStream), Encoding.UTF8))
+            using (Stream stream = Util.Copy(outputStream))
+            using (StreamReader reader = new StreamReader(stream, Encoding.UTF8))
             {
                 string output;
 
@@ -260,12 +263,12 @@ namespace OpenSim.Framework
 
                         using (MemoryStream ms = new MemoryStream())
                         {
-                            using (GZipStream comp = new GZipStream(ms, CompressionMode.Compress))
+                            using (GZipStream comp = new GZipStream(ms, CompressionMode.Compress, true))
                             {
                                 comp.Write(buffer, 0, buffer.Length);
                                 // We need to close the gzip stream before we write it anywhere
                                 // because apparently something important related to gzip compression
-                                // gets written on the strteam upon Dispose()
+                                // gets written on the stream upon Dispose()
                             }
                             byte[] buf = ms.ToArray();
                             request.ContentLength = buf.Length;   //Count bytes to send
@@ -773,6 +776,13 @@ namespace OpenSim.Framework
                 string requestUrl, TRequest obj, Action<TResponse> action,
                 int maxConnections)
         {
+            MakeRequest<TRequest, TResponse>(verb, requestUrl, obj, action, maxConnections, null);
+        }
+
+        public static void MakeRequest<TRequest, TResponse>(string verb,
+                string requestUrl, TRequest obj, Action<TResponse> action,
+                int maxConnections, IServiceAuth auth)
+        {
             int reqnum = WebUtil.RequestNumber++;
 
             if (WebUtil.DebugLevel >= 3)
@@ -786,6 +796,10 @@ namespace OpenSim.Framework
 
             WebRequest request = WebRequest.Create(requestUrl);
             HttpWebRequest ht = (HttpWebRequest)request;
+
+            if (auth != null)
+                auth.AddAuthorization(ht.Headers);
+
             if (maxConnections > 0 && ht.ServicePoint.ConnectionLimit < maxConnections)
                 ht.ServicePoint.ConnectionLimit = maxConnections;
 
@@ -969,7 +983,7 @@ namespace OpenSim.Framework
         ///
         /// <exception cref="System.Net.WebException">Thrown if we encounter a network issue while posting
         /// the request.  You'll want to make sure you deal with this as they're not uncommon</exception>
-        public static string MakeRequest(string verb, string requestUrl, string obj, int timeoutsecs)
+        public static string MakeRequest(string verb, string requestUrl, string obj, int timeoutsecs, IServiceAuth auth)
         {
             int reqnum = WebUtil.RequestNumber++;
 
@@ -984,6 +998,10 @@ namespace OpenSim.Framework
             request.Method = verb;
             if (timeoutsecs > 0)
                 request.Timeout = timeoutsecs * 1000;
+
+            if (auth != null)
+                auth.AddAuthorization(request.Headers);
+
             string respstring = String.Empty;
 
             using (MemoryStream buffer = new MemoryStream())
@@ -1068,9 +1086,19 @@ namespace OpenSim.Framework
             return respstring;
         }
 
+        public static string MakeRequest(string verb, string requestUrl, string obj, int timeoutsecs)
+        {
+            return MakeRequest(verb, requestUrl, obj, timeoutsecs, null);
+        }
+
         public static string MakeRequest(string verb, string requestUrl, string obj)
         {
             return MakeRequest(verb, requestUrl, obj, -1);
+        }
+
+        public static string MakeRequest(string verb, string requestUrl, string obj, IServiceAuth auth)
+        {
+            return MakeRequest(verb, requestUrl, obj, -1, auth);
         }
     }
 
@@ -1094,6 +1122,10 @@ namespace OpenSim.Framework
             return MakeRequest<TRequest, TResponse>(verb, requestUrl, obj, 0);
         }
 
+        public static TResponse MakeRequest<TRequest, TResponse>(string verb, string requestUrl, TRequest obj, IServiceAuth auth)
+        {
+            return MakeRequest<TRequest, TResponse>(verb, requestUrl, obj, 0, auth);
+        }
         /// <summary>
         /// Perform a synchronous REST request.
         /// </summary>
@@ -1112,7 +1144,11 @@ namespace OpenSim.Framework
             return MakeRequest<TRequest, TResponse>(verb, requestUrl, obj, pTimeout, 0);
         }
 
-        /// <summary>
+        public static TResponse MakeRequest<TRequest, TResponse>(string verb, string requestUrl, TRequest obj, int pTimeout, IServiceAuth auth)
+        {
+            return MakeRequest<TRequest, TResponse>(verb, requestUrl, obj, pTimeout, 0, auth);
+        }
+
         /// Perform a synchronous REST request.
         /// </summary>
         /// <param name="verb"></param>
@@ -1128,6 +1164,25 @@ namespace OpenSim.Framework
         /// </returns>
         public static TResponse MakeRequest<TRequest, TResponse>(string verb, string requestUrl, TRequest obj, int pTimeout, int maxConnections)
         {
+            return MakeRequest<TRequest, TResponse>(verb, requestUrl, obj, pTimeout, maxConnections, null);
+        }
+
+        /// <summary>
+        /// Perform a synchronous REST request.
+        /// </summary>
+        /// <param name="verb"></param>
+        /// <param name="requestUrl"></param>
+        /// <param name="obj"></param>
+        /// <param name="pTimeout">
+        /// Request timeout in milliseconds.  Timeout.Infinite indicates no timeout.  If 0 is passed then the default HttpWebRequest timeout is used (100 seconds)
+        /// </param>
+        /// <param name="maxConnections"></param>
+        /// <returns>
+        /// The response.  If there was an internal exception or the request timed out, 
+        /// then the default(TResponse) is returned.
+        /// </returns>
+        public static TResponse MakeRequest<TRequest, TResponse>(string verb, string requestUrl, TRequest obj, int pTimeout, int maxConnections, IServiceAuth auth)
+        {
             int reqnum = WebUtil.RequestNumber++;
 
             if (WebUtil.DebugLevel >= 3)
@@ -1142,6 +1197,9 @@ namespace OpenSim.Framework
 
             WebRequest request = WebRequest.Create(requestUrl);
             HttpWebRequest ht = (HttpWebRequest)request;
+
+            if (auth != null)
+                auth.AddAuthorization(ht.Headers);
 
             if (pTimeout != 0)
                 ht.Timeout = pTimeout;
@@ -1221,8 +1279,18 @@ namespace OpenSim.Framework
                 {
                     using (HttpWebResponse hwr = (HttpWebResponse)e.Response)
                     {
-                        if (hwr != null && hwr.StatusCode == HttpStatusCode.NotFound)
-                            return deserial;
+                        if (hwr != null)
+                        {
+                            if (hwr.StatusCode == HttpStatusCode.NotFound)
+                                return deserial;
+                            if (hwr.StatusCode == HttpStatusCode.Unauthorized)
+                            {
+                                m_log.Error(string.Format(
+                                    "[SynchronousRestObjectRequester]: Web request {0} requires authentication ",
+                                    requestUrl));
+                                return deserial;
+                            }
+                        }
                         else
                             m_log.Error(string.Format(
                                 "[SynchronousRestObjectRequester]: WebException for {0} {1} {2} ",

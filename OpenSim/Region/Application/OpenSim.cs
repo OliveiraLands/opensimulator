@@ -115,7 +115,7 @@ namespace OpenSim
                     Util.FireAndForgetMethod = asyncCallMethod;
 
                 stpMinThreads = startupConfig.GetInt("MinPoolThreads", 15);
-                stpMaxThreads = startupConfig.GetInt("MaxPoolThreads", 15);
+                stpMaxThreads = startupConfig.GetInt("MaxPoolThreads", 300);
                 m_consolePrompt = startupConfig.GetString("ConsolePrompt", @"Region (\R) ");
             }
 
@@ -155,7 +155,7 @@ namespace OpenSim
                     ((RemoteConsole)m_console).ReadConfig(Config);
                     break;
                 default:
-                    m_console = new LocalConsole("Region");
+                    m_console = new LocalConsole("Region", Config.Configs["Startup"]);
                     break;
                 }
             }
@@ -730,7 +730,7 @@ namespace OpenSim
             CreateRegion(regInfo, true, out scene);
 
             if (changed)
-	            regInfo.EstateSettings.Save();
+	            m_estateDataService.StoreEstateSettings(regInfo.EstateSettings);
         }
 
         /// <summary>
@@ -921,7 +921,7 @@ namespace OpenSim
 
                             foreach (IRegionModuleBase module in scene.RegionModules.Values)
                             {
-                                if (module.GetType().GetInterface("ISharedRegionModule") != null)
+                                if (module.GetType().GetInterface("ISharedRegionModule") == null)
                                     nonSharedModules.Add(module);
                                 else
                                     sharedModules.Add(module);
@@ -943,6 +943,7 @@ namespace OpenSim
                     cdt.AddColumn("Name", ConsoleDisplayUtil.RegionNameSize);
                     cdt.AddColumn("ID", ConsoleDisplayUtil.UuidSize);
                     cdt.AddColumn("Position", ConsoleDisplayUtil.CoordTupleSize);
+                    cdt.AddColumn("Size", 11);
                     cdt.AddColumn("Port", ConsoleDisplayUtil.PortSize);
                     cdt.AddColumn("Ready?", 6);
                     cdt.AddColumn("Estate", ConsoleDisplayUtil.EstateNameSize);
@@ -951,8 +952,13 @@ namespace OpenSim
                         { 
                             RegionInfo ri = scene.RegionInfo; 
                             cdt.AddRow(
-                                ri.RegionName, ri.RegionID, string.Format("{0},{1}", ri.RegionLocX, ri.RegionLocY), 
-                                ri.InternalEndPoint.Port, scene.Ready ? "Yes" : "No", ri.EstateSettings.EstateName);
+                                ri.RegionName, 
+                                ri.RegionID, 
+                                string.Format("{0},{1}", ri.RegionLocX, ri.RegionLocY), 
+                                string.Format("{0}x{1}", ri.RegionSizeX, ri.RegionSizeY),
+                                ri.InternalEndPoint.Port, 
+                                scene.Ready ? "Yes" : "No", 
+                                ri.EstateSettings.EstateName);
                         }
                     );
 

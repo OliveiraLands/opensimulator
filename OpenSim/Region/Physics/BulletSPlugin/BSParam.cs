@@ -54,6 +54,14 @@ public static class BSParam
     // ===================
     // From:
 
+    /// <summary>
+    /// Set whether physics is active or not.
+    /// </summary>
+    /// <remarks>
+    /// Can be enabled and disabled to start and stop physics.
+    /// </remarks>
+    public static bool Active { get; private set; }
+
     public static bool UseSeparatePhysicsThread { get; private set; }
     public static float PhysicsTimeStep { get; private set; }
 
@@ -136,6 +144,9 @@ public static class BSParam
     public static float AvatarHeightLowFudge { get; private set; }
     public static float AvatarHeightMidFudge { get; private set; }
     public static float AvatarHeightHighFudge { get; private set; }
+    public static float AvatarFlyingGroundMargin { get; private set; }
+    public static float AvatarFlyingGroundUpForce { get; private set; }
+    public static float AvatarTerminalVelocity { get; private set; }
 	public static float AvatarContactProcessingThreshold { get; private set; }
     public static float AvatarStopZeroThreshold { get; private set; }
 	public static int AvatarJumpFrames { get; private set; }
@@ -370,6 +381,8 @@ public static class BSParam
     //    v = value (appropriate type)
     private static ParameterDefnBase[] ParameterDefinitions =
     {
+        new ParameterDefn<bool>("Active", "If 'true', false then physics is not active",
+            false ),
         new ParameterDefn<bool>("UseSeparatePhysicsThread", "If 'true', the physics engine runs independent from the simulator heartbeat",
             false ),
         new ParameterDefn<float>("PhysicsTimeStep", "If separate thread, seconds to simulate each interval",
@@ -583,6 +596,12 @@ public static class BSParam
             0f ),
         new ParameterDefn<float>("AvatarHeightHighFudge", "A fudge factor to make tall avatars stand on the ground",
             0f ),
+        new ParameterDefn<float>("AvatarFlyingGroundMargin", "Meters avatar is kept above the ground when flying",
+            5f ),
+        new ParameterDefn<float>("AvatarFlyingGroundUpForce", "Upward force applied to the avatar to keep it at flying ground margin",
+            2.0f ),
+        new ParameterDefn<float>("AvatarTerminalVelocity", "Terminal Velocity of falling avatar",
+            -54.0f ),
 	    new ParameterDefn<float>("AvatarContactProcessingThreshold", "Distance from capsule to check for collisions",
             0.1f ),
 	    new ParameterDefn<float>("AvatarStopZeroThreshold", "Movement velocity below which avatar is assumed to be stopped",

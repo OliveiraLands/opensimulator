@@ -751,7 +751,7 @@ namespace OpenSim.Region.Framework.Scenes
             Vector3 bbox;
             float offsetHeight;
 
-            bool single = m_part.ParentGroup.Scene.GetObjectsToRez(rezAsset.Data, false, out objlist, out veclist, out bbox, out offsetHeight);
+            m_part.ParentGroup.Scene.GetObjectsToRez(rezAsset.Data, false, out objlist, out veclist, out bbox, out offsetHeight);
 
             for (int i = 0; i < objlist.Count; i++)
             {
@@ -870,8 +870,8 @@ namespace OpenSim.Region.Framework.Scenes
                 int type = m_items[itemID].InvType;
                 if (type == 10) // Script
                 {
-                    m_part.RemoveScriptEvents(itemID);
-                    m_part.ParentGroup.Scene.EventManager.TriggerRemoveScript(m_part.LocalId, itemID);
+                    // route it through here, to handle script cleanup tasks
+                    RemoveScriptInstance(itemID, false);
                 }
                 m_items.Remove(itemID);
                 m_inventorySerial++;

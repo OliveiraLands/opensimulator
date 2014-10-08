@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) Contributors, http://opensimulator.org/
  * See CONTRIBUTORS.TXT for a full list of copyright holders.
  *
@@ -205,6 +205,17 @@ public class BSActorAvatarMove : BSActor
                     // Flying and not colliding and velocity nearly zero.
                     m_controllingPrim.ZeroMotion(true /* inTaintTime */);
                 }
+                else
+                {
+                    //We are falling but are not touching any keys make sure not falling too fast
+                    if (m_controllingPrim.RawVelocity.Z < BSParam.AvatarTerminalVelocity)
+                    {
+
+                        OMV.Vector3 slowingForce = new OMV.Vector3(0f, 0f, BSParam.AvatarTerminalVelocity - m_controllingPrim.RawVelocity.Z) * m_controllingPrim.Mass;
+                        m_physicsScene.PE.ApplyCentralImpulse(m_controllingPrim.PhysBody, slowingForce);
+                    }
+
+                }
             }
 
             m_physicsScene.DetailLog("{0},BSCharacter.MoveMotor,taint,stopping,target={1},colliding={2}",
@@ -226,7 +237,6 @@ public class BSActorAvatarMove : BSActor
             {
                 stepVelocity.Z = m_controllingPrim.RawVelocity.Z;
             }
-
 
             // Colliding and not flying with an upward force. The avatar must be trying to jump.
             if (!m_controllingPrim.Flying && m_controllingPrim.IsColliding && stepVelocity.Z > 0)
@@ -253,10 +263,32 @@ public class BSActorAvatarMove : BSActor
                 }
                 else
                 {
-                    // Since we're not affected by anything, whatever vertical motion the avatar has, continue that.
-                    stepVelocity.Z = m_controllingPrim.RawVelocity.Z;
+                    
+                    // Since we're not affected by anything, the avatar must be falling and we do not want that to be too fast.
+                    if (m_controllingPrim.RawVelocity.Z < BSParam.AvatarTerminalVelocity)
+                    {
+                        
+                        stepVelocity.Z = BSParam.AvatarTerminalVelocity;
+                    }
+                    else
+                    {
+                        stepVelocity.Z = m_controllingPrim.RawVelocity.Z;
+                    }
                 }
                 // DetailLog("{0},BSCharacter.MoveMotor,taint,overrideStepZWithWorldZ,stepVel={1}", LocalID, stepVelocity);
+            }
+
+            //Alicia: Maintain minimum height when flying.
+            // SL has a flying effect that keeps the avatar flying above the ground by some margin
+            if (m_controllingPrim.Flying)
+            {
+                float hover_height = m_physicsScene.TerrainManager.GetTerrainHeightAtXYZ(m_controllingPrim.RawPosition)
+                                                        + BSParam.AvatarFlyingGroundMargin;
+
+                if( m_controllingPrim.Position.Z < hover_height)
+                {
+                    stepVelocity.Z += BSParam.AvatarFlyingGroundUpForce;
+                }
             }
 
             // 'stepVelocity' is now the speed we'd like the avatar to move in. Turn that into an instantanous force.

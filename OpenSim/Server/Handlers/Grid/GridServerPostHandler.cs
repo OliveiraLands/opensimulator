@@ -40,6 +40,7 @@ using OpenSim.Server.Base;
 using OpenSim.Services.Interfaces;
 using GridRegion = OpenSim.Services.Interfaces.GridRegion;
 using OpenSim.Framework;
+using OpenSim.Framework.ServiceAuth;
 using OpenSim.Framework.Servers.HttpServer;
 using OpenMetaverse;
 
@@ -55,8 +56,8 @@ namespace OpenSim.Server.Handlers.Grid
 
         private IGridService m_GridService;
 
-        public GridServerPostHandler(IGridService service) :
-                base("POST", "/grid")
+        public GridServerPostHandler(IGridService service, IServiceAuth auth) :
+                base("POST", "/grid", auth)
         {
             m_GridService = service;
         }
@@ -121,6 +122,9 @@ namespace OpenSim.Server.Handlers.Grid
 
                     case "get_region_flags":
                         return GetRegionFlags(request);
+
+                    case "get_grid_extra_features":
+                        return GetGridExtraFeatures(request);
                 }
                 
                 m_log.DebugFormat("[GRID HANDLER]: unknown method request {0}", method);
@@ -577,6 +581,22 @@ namespace OpenSim.Server.Handlers.Grid
             //m_log.DebugFormat("[GRID HANDLER]: resp string: {0}", xmlString);
             return Util.UTF8NoBomEncoding.GetBytes(xmlString);
         }
+        
+        byte[] GetGridExtraFeatures(Dictionary<string, object> request)
+        {
+
+            Dictionary<string, object> result = new Dictionary<string, object> ();
+            Dictionary<string, object> extraFeatures = m_GridService.GetExtraFeatures ();
+
+            foreach (string key in extraFeatures.Keys) 
+            {
+                result [key] = extraFeatures [key];
+            }
+
+            string xmlString = ServerUtils.BuildXmlResponse(result);
+
+            return Util.UTF8NoBomEncoding.GetBytes(xmlString);
+        }
 
         #endregion
 
@@ -601,7 +621,7 @@ namespace OpenSim.Server.Handlers.Grid
 
             rootElement.AppendChild(result);
 
-            return DocToBytes(doc);
+            return Util.DocToBytes(doc);
         }
 
         private byte[] FailureResult()
@@ -633,18 +653,7 @@ namespace OpenSim.Server.Handlers.Grid
 
             rootElement.AppendChild(message);
 
-            return DocToBytes(doc);
-        }
-
-        private byte[] DocToBytes(XmlDocument doc)
-        {
-            MemoryStream ms = new MemoryStream();
-            XmlTextWriter xw = new XmlTextWriter(ms, null);
-            xw.Formatting = Formatting.Indented;
-            doc.WriteTo(xw);
-            xw.Flush();
-
-            return ms.ToArray();
+            return Util.DocToBytes(doc);
         }
 
         #endregion

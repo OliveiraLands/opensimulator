@@ -48,6 +48,7 @@ namespace OpenSim.Region.ScriptEngine.Shared.ScriptBase
         public const int STATUS_DIE_AT_EDGE = 128;
         public const int STATUS_RETURN_AT_EDGE = 256;
         public const int STATUS_CAST_SHADOWS = 512;
+        public const int STATUS_BLOCK_GRAB_OBJECT = 1024;
 
         public const int AGENT = 1;
         public const int AGENT_BY_LEGACY_NAME = 1;
@@ -410,6 +411,9 @@ namespace OpenSim.Region.ScriptEngine.Shared.ScriptBase
         public const int PRIM_POS_LOCAL = 33;
         public const int PRIM_LINK_TARGET = 34;
         public const int PRIM_SLICE = 35;
+        public const int PRIM_SPECULAR = 36;
+        public const int PRIM_NORMAL = 37;
+        public const int PRIM_ALPHA_MODE = 38;
         public const int PRIM_TEXGEN_DEFAULT = 0;
         public const int PRIM_TEXGEN_PLANAR = 1;
 

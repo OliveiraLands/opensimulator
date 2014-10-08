@@ -28,7 +28,17 @@
   ; Set path to directory for modular ini files...
   ; The Robust.exe process must have R/W access to the location 
   ConfigDirectory = "."
+  
+  ; Console commands can be saved to a file, so the command history persists after a restart. (default is true)
+  ConsoleHistoryFileEnabled = true
 
+  ; The history file can be just a filename (relative to OpenSim's bin/ directory
+  ; or it can be a full path to somewhere else. (default is OpenSimConsoleHistory.txt in bin/)
+  ConsoleHistoryFile = "RobustConsoleHistory.txt"
+
+  ; How many lines of command history should we keep? (default is 100)
+  ConsoleHistoryFileLines = 100
+  
 [ServiceList]
 AssetServiceConnector = "8003/OpenSim.Server.Handlers.dll:AssetServiceConnector"
 InventoryInConnector = "8003/OpenSim.Server.Handlers.dll:XInventoryInConnector"
@@ -80,6 +90,19 @@ MapGetServiceConnector = "8002/OpenSim.Server.Handlers.dll:MapGetServiceConnecto
     ;
     ; Password for cert
     ; cert_pass = "password"
+
+	;; The follow 3 variables are for HTTP Basic Authentication for the Robust services.
+	;; Use this if your central services in port 8003 need to be accessible on the Internet
+	;; but you want to protect them from unauthorized access.
+    ; AuthType = "BasicHttpAuthentication"
+    ; HttpAuthUsername = "some_username"
+    ; HttpAuthPassword = "some_password"
+	;;
+	;; AuthType above can be overriden in any of the service sections below by
+	; AuthType = "None"
+	;; This is useful in cases where you want to protect most of the services,
+	;; but unprotect individual services. Username and Password can also be
+	;; overriden if you want to use different credentials for the different services.
 
 
 ; * The following are for the remote console
@@ -163,6 +186,10 @@ MapGetServiceConnector = "8002/OpenSim.Server.Handlers.dll:MapGetServiceConnecto
     ;; Example specification:
     ; Region_Welcome_Area = "DefaultRegion, FallbackRegion"
     ; (replace spaces with underscore)
+
+    ;; Allow supporting viewers to export content
+    ;; Set to false to prevent export
+    ExportSupported = true
 
 ; * This is the configuration for the freeswitch server in grid mode
 [FreeswitchService]
@@ -309,17 +336,10 @@ MapGetServiceConnector = "8002/OpenSim.Server.Handlers.dll:MapGetServiceConnecto
     AllowRemoteSetLoginLevel = "false"
 
     ; For V2 map
-    MapTileURL = "http://127.0.0.1:8002";
+    MapTileURL = "http://127.0.0.1:8002/";
 
-    ; For V2/3 Web Profiles
-    ; Work in progress: The ProfileServerURL/OpenIDServerURL are
-    ; being used in a development viewer as support for webprofiles
-    ; is being developed across the componets
-    ;
-    ; ProfileServerURL = "http://127.0.0.1/profiles/[AGENT_NAME]"
-    ;
-    ; For V2/V3 webapp authentication SSO
-    ; OpenIDServerURL = "http://127.0.0.1/openid/openidserver/"
+    ; Url to search service
+    ; SearchURL = "http://127.0.0.1:8002/";
 
     ; For V3 destination guide
     ; DestinationGuide = "http://127.0.0.1/guide"
@@ -452,9 +472,8 @@ MapGetServiceConnector = "8002/OpenSim.Server.Handlers.dll:MapGetServiceConnecto
     UserAccountService = OpenSim.Services.UserAccountService.dll:UserAccountService
     AuthenticationServiceModule = "OpenSim.Services.AuthenticationService.dll:PasswordAuthenticationService"
 
-
 [BakedTextureService]
     LocalServiceModule = "OpenSim.Server.Handlers.dll:XBakes"
-    ;; This directory must exist and be writable for the user ROBUST runs as
-    BaseDirectory = "/data/bakes"
+    ;; This directory must be writable by the user ROBUST runs as. It will be created automatically.
+    BaseDirectory = "./bakes"
 

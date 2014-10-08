@@ -35,6 +35,7 @@ using System.Timers;
 using log4net;
 using OpenMetaverse;
 using OpenMetaverse.Assets;
+using OpenMetaverse.Packets;
 using Nini.Config;
 using OpenSim.Framework;
 using OpenSim.Framework.Console;
@@ -55,6 +56,27 @@ namespace pCampBot
     public class Bot
     {
         private static readonly ILog m_log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
+
+        public int PacketDebugLevel 
+        { 
+            get { return m_packetDebugLevel; }
+            set 
+            {
+                if (value == m_packetDebugLevel)
+                    return;
+
+                m_packetDebugLevel = value;
+
+                if (Client != null)
+                {
+                    if (m_packetDebugLevel <= 0)
+                        Client.Network.UnregisterCallback(PacketType.Default, PacketReceivedDebugHandler);
+                    else
+                        Client.Network.RegisterCallback(PacketType.Default, PacketReceivedDebugHandler, false);
+                }
+            }
+        }
+        private int m_packetDebugLevel;
 
         public delegate void AnEvent(Bot callbot, EventType someevent); // event delegate for bot events
 
@@ -192,15 +214,15 @@ namespace pCampBot
 
         public bool AddBehaviour(IBehaviour behaviour)
         {
-            lock (Behaviours)
-            {
-                if (!Behaviours.ContainsKey(behaviour.AbbreviatedName))
-                {                    
-                    behaviour.Initialize(this);
-                    Behaviours.Add(behaviour.AbbreviatedName, behaviour);
+            Dictionary<string, IBehaviour> updatedBehaviours = new Dictionary<string, IBehaviour>(Behaviours);
 
-                    return true;
-                }
+            if (!updatedBehaviours.ContainsKey(behaviour.AbbreviatedName))
+            {                    
+                behaviour.Initialize(this);
+                updatedBehaviours.Add(behaviour.AbbreviatedName, behaviour);
+                Behaviours = updatedBehaviours;
+
+                return true;
             }
 
             return false;
@@ -208,18 +230,21 @@ namespace pCampBot
 
         public bool RemoveBehaviour(string abbreviatedName)
         {
-            lock (Behaviours)
-            {
-                IBehaviour behaviour;
+            if (Behaviours.Count <= 0)
+                return false;
 
-                if (!Behaviours.TryGetValue(abbreviatedName, out behaviour))
-                    return false;
+            Dictionary<string, IBehaviour> updatedBehaviours = new Dictionary<string, IBehaviour>(Behaviours);
+            IBehaviour behaviour;
 
-                behaviour.Close();
-                Behaviours.Remove(abbreviatedName);
+            if (!updatedBehaviours.TryGetValue(abbreviatedName, out behaviour))
+                return false;
 
-                return true;
-            }
+            updatedBehaviours.Remove(abbreviatedName);
+            Behaviours = updatedBehaviours;
+
+            behaviour.Close();
+
+            return true;
         }
 
         private void CreateLibOmvClient()
@@ -228,6 +253,9 @@ namespace pCampBot
 
             if (Client != null)
             {
+                // Remove any registered debug handlers
+                Client.Network.UnregisterCallback(PacketType.Default, PacketReceivedDebugHandler);
+
                 newClient.Settings.LOGIN_SERVER = Client.Settings.LOGIN_SERVER;
                 newClient.Settings.ALWAYS_DECODE_OBJECTS = Client.Settings.ALWAYS_DECODE_OBJECTS;
                 newClient.Settings.AVATAR_TRACKING = Client.Settings.AVATAR_TRACKING;
@@ -270,6 +298,9 @@ namespace pCampBot
             newClient.Network.Disconnected += Network_OnDisconnected;
             newClient.Objects.ObjectUpdate += Objects_NewPrim;
 
+            if (m_packetDebugLevel > 0)
+                newClient.Network.RegisterCallback(PacketType.Default, PacketReceivedDebugHandler);
+
             Client = newClient;
         }
 
@@ -279,24 +310,17 @@ namespace pCampBot
         {
             while (ConnectionState == ConnectionState.Connected)
             {
-                lock (Behaviours)
+                foreach (IBehaviour behaviour in Behaviours.Values)
                 {
-                    foreach (IBehaviour behaviour in Behaviours.Values)
-                    {
 //                        Thread.Sleep(Random.Next(3000, 10000));
-                    
-                        // m_log.DebugFormat("[pCAMPBOT]: For {0} performing action {1}", Name, b.GetType());
-                        behaviour.Action();
-                    }
+                
+                    // m_log.DebugFormat("[pCAMPBOT]: For {0} performing action {1}", Name, b.GetType());
+                    behaviour.Action();
                 }
-
-                // XXX: This is a really shitty way of yielding so that behaviours can be added/removed
-                Thread.Sleep(100);
             }
 
-            lock (Behaviours)
-                foreach (IBehaviour b in Behaviours.Values)
-                    b.Close();
+            foreach (IBehaviour b in Behaviours.Values)
+                b.Close();
         }
 
         /// <summary>
@@ -305,9 +329,9 @@ namespace pCampBot
         public void Disconnect()
         {
             ConnectionState = ConnectionState.Disconnecting;
-
-//            if (m_actionThread != null)
-//                m_actionThread.Abort();
+              
+            foreach (IBehaviour behaviour in Behaviours.Values)
+                behaviour.Close();
 
             Client.Network.Logout();
         }
@@ -333,7 +357,7 @@ namespace pCampBot
             // client
             CreateLibOmvClient();
 
-            if (Client.Network.Login(FirstName, LastName, Password, "pCampBot", StartLocation, "Your name"))
+            if (Client.Network.Login(FirstName, LastName, Password, "pCampBot", StartLocation, "pCampBot"))
             {
                 ConnectionState = ConnectionState.Connected;
 
@@ -635,7 +659,7 @@ namespace pCampBot
                 {
                     if (prim.Textures.DefaultTexture.TextureID != UUID.Zero)
                     {
-                        GetTexture(prim.Textures.DefaultTexture.TextureID);
+                        GetTextureOrMesh(prim.Textures.DefaultTexture.TextureID, true);
                     }
 
                     for (int i = 0; i < prim.Textures.FaceTextures.Length; i++)
@@ -647,32 +671,56 @@ namespace pCampBot
                             UUID textureID = prim.Textures.FaceTextures[i].TextureID;
 
                             if (textureID != UUID.Zero)
-                                GetTexture(textureID);
+                                GetTextureOrMesh(textureID, true);
                         }
                     }
                 }
 
                 if (prim.Sculpt != null && prim.Sculpt.SculptTexture != UUID.Zero)
-                    GetTexture(prim.Sculpt.SculptTexture);
+                {
+                    bool mesh = (prim.Sculpt.Type == SculptType.Mesh);
+                    GetTextureOrMesh(prim.Sculpt.SculptTexture, !mesh);
+                }
             }
         }
 
-        private void GetTexture(UUID textureID)
+        private void GetTextureOrMesh(UUID assetID, bool texture)
         {
             lock (Manager.AssetsReceived)
             {
                 // Don't request assets more than once.
-                if (Manager.AssetsReceived.ContainsKey(textureID))
+                if (Manager.AssetsReceived.ContainsKey(assetID))
                     return;
 
-                Manager.AssetsReceived[textureID] = false;
-                Client.Assets.RequestImage(textureID, ImageType.Normal, Asset_TextureCallback_Texture);
+                Manager.AssetsReceived[assetID] = false;
+            }
+
+            try
+            {
+                if (texture)
+                    Client.Assets.RequestImage(assetID, ImageType.Normal, Asset_TextureCallback_Texture);
+                else
+                    Client.Assets.RequestMesh(assetID, Asset_MeshCallback);
+            }
+            catch (Exception e)
+            {
+                m_log.Warn(string.Format("Error requesting {0} {1}", texture ? "texture" : "mesh", assetID), e);
             }
         }
         
         public void Asset_TextureCallback_Texture(TextureRequestState state, AssetTexture assetTexture)
         {
-            //TODO: Implement texture saving and applying
+            if (state == TextureRequestState.Finished)
+            {
+                lock (Manager.AssetsReceived)
+                    Manager.AssetsReceived[assetTexture.AssetID] = true;
+            }
+        }
+
+        private void Asset_MeshCallback(bool success, AssetMesh assetMesh)
+        {
+            lock (Manager.AssetsReceived)
+                Manager.AssetsReceived[assetMesh.AssetID] = success;
         }
         
         public void Asset_ReceivedCallback(AssetDownload transfer, Asset asset)
@@ -684,6 +732,17 @@ namespace pCampBot
 //            {
 //                SaveAsset((AssetWearable) asset);
 //            }
+        }
+         
+        private void PacketReceivedDebugHandler(object o, PacketReceivedEventArgs args)
+        {
+            Packet p = args.Packet;
+            Header h = p.Header;
+            Simulator s = args.Simulator;
+
+            m_log.DebugFormat(
+                "[BOT]: Bot {0} received from {1} packet {2} #{3}, rel {4}, res {5}", 
+                Name, s.Name, p.Type, h.Sequence, h.Reliable, h.Resent);
         }
     }
 }

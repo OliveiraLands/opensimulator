@@ -186,7 +186,7 @@ namespace OpenSim.Region.Framework.Scenes
         
         public bool RETURN_AT_EDGE;
         
-        public bool BlockGrab;
+        public bool BlockGrab { get; set; }
 
         public bool StatusSandbox;
 
@@ -1589,20 +1589,29 @@ namespace OpenSim.Region.Framework.Scenes
 
         public void AddTextureAnimation(Primitive.TextureAnimation pTexAnim)
         {
-            byte[] data = new byte[16];
-            int pos = 0;
+            byte[] data;
 
-            // The flags don't like conversion from uint to byte, so we have to do
-            // it the crappy way.  See the above function :(
+            if (pTexAnim.Flags == Primitive.TextureAnimMode.ANIM_OFF)
+            {
+                data = Utils.EmptyBytes;
+            }
+            else
+            {
+                data = new byte[16];
+                int pos = 0;
 
-            data[pos] = ConvertScriptUintToByte((uint)pTexAnim.Flags); pos++;
-            data[pos] = (byte)pTexAnim.Face; pos++;
-            data[pos] = (byte)pTexAnim.SizeX; pos++;
-            data[pos] = (byte)pTexAnim.SizeY; pos++;
+                // The flags don't like conversion from uint to byte, so we have to do
+                // it the crappy way.  See the above function :(
 
-            Utils.FloatToBytes(pTexAnim.Start).CopyTo(data, pos);
-            Utils.FloatToBytes(pTexAnim.Length).CopyTo(data, pos + 4);
-            Utils.FloatToBytes(pTexAnim.Rate).CopyTo(data, pos + 8);
+                data[pos] = ConvertScriptUintToByte((uint)pTexAnim.Flags); pos++;
+                data[pos] = (byte)pTexAnim.Face; pos++;
+                data[pos] = (byte)pTexAnim.SizeX; pos++;
+                data[pos] = (byte)pTexAnim.SizeY; pos++;
+
+                Utils.FloatToBytes(pTexAnim.Start).CopyTo(data, pos);
+                Utils.FloatToBytes(pTexAnim.Length).CopyTo(data, pos + 4);
+                Utils.FloatToBytes(pTexAnim.Rate).CopyTo(data, pos + 8);
+            }
 
             m_TextureAnimation = data;
         }
@@ -2044,7 +2053,7 @@ namespace OpenSim.Region.Framework.Scenes
         /// </summary>
         /// <param name="xmlReader"></param>
         /// <returns></returns>
-        public static SceneObjectPart FromXml(XmlTextReader xmlReader)
+        public static SceneObjectPart FromXml(XmlReader xmlReader)
         {
             SceneObjectPart part = SceneObjectSerializer.Xml2ToSOP(xmlReader);
 
@@ -2077,22 +2086,6 @@ namespace OpenSim.Region.Framework.Scenes
                 return;
 
             ParentGroup.RootPart.RETURN_AT_EDGE = p;
-        }
-
-        public bool GetBlockGrab()
-        {
-            if (ParentGroup.IsDeleted)
-                return false;
-
-            return ParentGroup.RootPart.BlockGrab;
-        }
-
-        public void SetBlockGrab(bool p)
-        {
-            if (ParentGroup.IsDeleted)
-                return;
-
-            ParentGroup.RootPart.BlockGrab = p;
         }
 
         public void SetStatusSandbox(bool p)

@@ -30,6 +30,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using System.Threading;
 using log4net;
 using Mono.Addins;
 using Nini.Config;
@@ -93,28 +94,44 @@ namespace OpenSim.Region.OptionalModules.Avatar.Attachments
                 "Debug", this, "debug scene get",
                 "debug scene get",
                 "List current scene options.",
-                "If active     is false then main scene update and maintenance loops are suspended.\n"
-                    + "If animations is true  then extra animations debug information is logged.\n"
-                    + "If collisions is false then collisions with other objects are turned off.\n"
-                    + "If pbackup    is false then periodic scene backup is turned off.\n"
-                    + "If physics    is false then all physics objects are non-physical.\n"
-                    + "If scripting  is false then no scripting operations happen.\n"
-                    + "If teleport   is true  then some extra teleport debug information is logged.\n"
-                    + "If updates    is true  then any frame which exceeds double the maximum desired frame time is logged.",
+                      "active          - if false then main scene update and maintenance loops are suspended.\n"
+                    + "animations      - if true  then extra animations debug information is logged.\n"
+                    + "appear-refresh  - if true  then appearance is resent to other avatars every 60 seconds.\n"
+                    + "child-repri     - how far an avatar must move in meters before we update the position of its child agents in neighbouring regions.\n"
+                    + "client-pos-upd  - the tolerance before clients are updated with new rotation information for an avatar.\n"
+                    + "client-rot-upd  - the tolerance before clients are updated with new rotation information for an avatar.\n"
+                    + "client-vel-upd  - the tolerance before clients are updated with new velocity information for an avatar.\n"
+                    + "root-upd-per    - if greater than 1, terse updates are only sent to root agents other than the originator on every n updates.\n"
+                    + "child-upd-per   - if greater than 1, terse updates are only sent to child agents on every n updates.\n"                    
+                    + "collisions      - if false then collisions with other objects are turned off.\n"
+                    + "pbackup         - if false then periodic scene backup is turned off.\n"
+                    + "physics         - if false then all physics objects are non-physical.\n"
+                    + "scripting       - if false then no scripting operations happen.\n"
+                    + "teleport        - if true  then some extra teleport debug information is logged.\n"
+                    + "update-on-timer - If true  then the scene is updated via a timer.  If false then a thread with sleep is used.\n"
+                    + "updates         - if true  then any frame which exceeds double the maximum desired frame time is logged.",
                 HandleDebugSceneGetCommand);
 
             scene.AddCommand(
                 "Debug", this, "debug scene set",
-                "debug scene set active|collisions|pbackup|physics|scripting|teleport|updates true|false",
+                "debug scene set <param> <value>",
                 "Turn on scene debugging options.",
-                "If active     is false then main scene update and maintenance loops are suspended.\n"
-                    + "If animations is true  then extra animations debug information is logged.\n"
-                    + "If collisions is false then collisions with other objects are turned off.\n"
-                    + "If pbackup    is false then periodic scene backup is turned off.\n"
-                    + "If physics    is false then all physics objects are non-physical.\n"
-                    + "If scripting  is false then no scripting operations happen.\n"
-                    + "If teleport   is true  then some extra teleport debug information is logged.\n"
-                    + "If updates    is true  then any frame which exceeds double the maximum desired frame time is logged.",
+                      "active          - if false then main scene update and maintenance loops are suspended.\n"
+                    + "animations      - if true  then extra animations debug information is logged.\n"
+                    + "appear-refresh  - if true  then appearance is resent to other avatars every 60 seconds.\n"
+                    + "child-repri     - how far an avatar must move in meters before we update the position of its child agents in neighbouring regions.\n"
+                    + "client-pos-upd  - the tolerance before clients are updated with new rotation information for an avatar.\n"
+                    + "client-rot-upd  - the tolerance before clients are updated with new rotation information for an avatar.\n"
+                    + "client-vel-upd  - the tolerance before clients are updated with new velocity information for an avatar.\n"
+                    + "root-upd-per    - if greater than 1, terse updates are only sent to root agents other than the originator on every n updates.\n"
+                    + "child-upd-per   - if greater than 1, terse updates are only sent to child agents on every n updates.\n"
+                    + "collisions      - if false then collisions with other objects are turned off.\n"
+                    + "pbackup         - if false then periodic scene backup is turned off.\n"
+                    + "physics         - if false then all physics objects are non-physical.\n"
+                    + "scripting       - if false then no scripting operations happen.\n"
+                    + "teleport        - if true  then some extra teleport debug information is logged.\n"
+                    + "update-on-timer - If true  then the scene is updated via a timer.  If false then a thread with sleep is used.\n"
+                    + "updates         - if true  then any frame which exceeds double the maximum desired frame time is logged.",
                 HandleDebugSceneSetCommand);
         }
 
@@ -138,10 +155,18 @@ namespace OpenSim.Region.OptionalModules.Avatar.Attachments
             ConsoleDisplayList cdl = new ConsoleDisplayList();
             cdl.AddRow("active", m_scene.Active);
             cdl.AddRow("animations", m_scene.DebugAnimations);
+            cdl.AddRow("appear-refresh", m_scene.SendPeriodicAppearanceUpdates);
+            cdl.AddRow("child-repri", m_scene.ChildReprioritizationDistance);
+            cdl.AddRow("client-pos-upd", m_scene.RootPositionUpdateTolerance);
+            cdl.AddRow("client-rot-upd", m_scene.RootRotationUpdateTolerance);
+            cdl.AddRow("client-vel-upd", m_scene.RootVelocityUpdateTolerance);
+            cdl.AddRow("root-upd-per", m_scene.RootTerseUpdatePeriod);
+            cdl.AddRow("child-upd-per", m_scene.ChildTerseUpdatePeriod);
             cdl.AddRow("pbackup", m_scene.PeriodicBackup);
             cdl.AddRow("physics", m_scene.PhysicsEnabled);
             cdl.AddRow("scripting", m_scene.ScriptsEnabled);
             cdl.AddRow("teleport", m_scene.DebugTeleporting);
+            cdl.AddRow("update-on-timer", m_scene.UpdateOnTimer);
             cdl.AddRow("updates", m_scene.DebugUpdates);
 
             MainConsole.Instance.OutputFormat("Scene {0} options:", m_scene.Name);
@@ -163,8 +188,7 @@ namespace OpenSim.Region.OptionalModules.Avatar.Attachments
             }
             else
             {
-                MainConsole.Instance.Output(
-                    "Usage: debug scene set active|collisions|pbackup|physics|scripting|teleport|updates true|false");
+                MainConsole.Instance.Output("Usage: debug scene set <param> <value>");
             }
         }
 
@@ -184,6 +208,69 @@ namespace OpenSim.Region.OptionalModules.Avatar.Attachments
 
                 if (bool.TryParse(options["animations"], out active))
                     m_scene.DebugAnimations = active;
+            }
+
+            if (options.ContainsKey("appear-refresh"))
+            {
+                bool newValue;
+
+                // FIXME: This can only come from the console at the moment but might not always be true.
+                if (ConsoleUtil.TryParseConsoleBool(MainConsole.Instance, options["appear-refresh"], out newValue))
+                    m_scene.SendPeriodicAppearanceUpdates = newValue;     
+            }
+
+            if (options.ContainsKey("child-repri"))
+            {
+                double newValue;
+
+                // FIXME: This can only come from the console at the moment but might not always be true.
+                if (ConsoleUtil.TryParseConsoleDouble(MainConsole.Instance, options["child-repri"], out newValue))
+                    m_scene.ChildReprioritizationDistance = newValue;                
+            }
+
+            if (options.ContainsKey("client-pos-upd"))
+            {
+                float newValue;
+
+                // FIXME: This can only come from the console at the moment but might not always be true.
+                if (ConsoleUtil.TryParseConsoleFloat(MainConsole.Instance, options["client-pos-upd"], out newValue))
+                    m_scene.RootPositionUpdateTolerance = newValue;    
+            }
+
+            if (options.ContainsKey("client-rot-upd"))
+            {
+                float newValue;
+
+                // FIXME: This can only come from the console at the moment but might not always be true.
+                if (ConsoleUtil.TryParseConsoleFloat(MainConsole.Instance, options["client-rot-upd"], out newValue))
+                    m_scene.RootRotationUpdateTolerance = newValue;    
+            }
+
+            if (options.ContainsKey("client-vel-upd"))
+            {
+                float newValue;
+
+                // FIXME: This can only come from the console at the moment but might not always be true.
+                if (ConsoleUtil.TryParseConsoleFloat(MainConsole.Instance, options["client-vel-upd"], out newValue))
+                    m_scene.RootVelocityUpdateTolerance = newValue;    
+            }
+
+            if (options.ContainsKey("root-upd-per"))
+            {
+                int newValue;
+
+                // FIXME: This can only come from the console at the moment but might not always be true.
+                if (ConsoleUtil.TryParseConsoleNaturalInt(MainConsole.Instance, options["root-upd-per"], out newValue))
+                    m_scene.RootTerseUpdatePeriod = newValue;    
+            }
+
+            if (options.ContainsKey("child-upd-per"))
+            {
+                int newValue;
+
+                // FIXME: This can only come from the console at the moment but might not always be true.
+                if (ConsoleUtil.TryParseConsoleNaturalInt(MainConsole.Instance, options["child-upd-per"], out newValue))
+                    m_scene.ChildTerseUpdatePeriod = newValue;    
             }
 
             if (options.ContainsKey("pbackup"))
@@ -219,6 +306,21 @@ namespace OpenSim.Region.OptionalModules.Avatar.Attachments
                 bool enableTeleportDebugging;
                 if (bool.TryParse(options["teleport"], out enableTeleportDebugging))
                     m_scene.DebugTeleporting = enableTeleportDebugging;
+            }
+
+            if (options.ContainsKey("update-on-timer"))
+            {
+                bool enableUpdateOnTimer;
+                if (bool.TryParse(options["update-on-timer"], out enableUpdateOnTimer))
+                {
+                    m_scene.UpdateOnTimer = enableUpdateOnTimer;
+                    m_scene.Active = false;
+
+                    while (m_scene.IsRunning)
+                        Thread.Sleep(20);
+
+                    m_scene.Active = true;
+                }
             }
 
             if (options.ContainsKey("updates"))

@@ -44,11 +44,11 @@ namespace OpenSim.Framework.Serialization.External
     {
 //        private static readonly ILog m_log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
 
-        private static Dictionary<string, Action<LandData, XmlTextReader>> m_ldProcessors
-            = new Dictionary<string, Action<LandData, XmlTextReader>>();
+        private static Dictionary<string, Action<LandData, XmlReader>> m_ldProcessors
+            = new Dictionary<string, Action<LandData, XmlReader>>();
 
-        private static Dictionary<string, Action<LandAccessEntry, XmlTextReader>> m_laeProcessors
-            = new Dictionary<string, Action<LandAccessEntry, XmlTextReader>>();
+        private static Dictionary<string, Action<LandAccessEntry, XmlReader>> m_laeProcessors
+            = new Dictionary<string, Action<LandAccessEntry, XmlReader>>();
 
         static LandDataSerializer()
         {
@@ -134,7 +134,7 @@ namespace OpenSim.Framework.Serialization.External
                 "AccessList",       (lae, xtr) => lae.Flags = (AccessList)Convert.ToUInt32(xtr.ReadElementString("AccessList")));
         }
 
-        public static void ProcessParcelAccessList(LandData ld, XmlTextReader xtr)
+        public static void ProcessParcelAccessList(LandData ld, XmlReader xtr)
         {
             if (!xtr.IsEmptyElement)
             {
@@ -213,8 +213,13 @@ namespace OpenSim.Framework.Serialization.External
             xtw.WriteElementString("ClaimDate",      Convert.ToString(landData.ClaimDate));
             xtw.WriteElementString("ClaimPrice",     Convert.ToString(landData.ClaimPrice));
             xtw.WriteElementString("GlobalID",       landData.GlobalID.ToString());
-            xtw.WriteElementString("GroupID",        landData.GroupID.ToString());
-            xtw.WriteElementString("IsGroupOwned",   Convert.ToString(landData.IsGroupOwned));
+
+            UUID groupID = options.ContainsKey("wipe-owners") ? UUID.Zero : landData.GroupID;
+            xtw.WriteElementString("GroupID",        groupID.ToString());
+
+            bool isGroupOwned = options.ContainsKey("wipe-owners") ? false : landData.IsGroupOwned;
+            xtw.WriteElementString("IsGroupOwned",   Convert.ToString(isGroupOwned));
+
             xtw.WriteElementString("Bitmap",         Convert.ToBase64String(landData.Bitmap));
             xtw.WriteElementString("Description",    landData.Description);
             xtw.WriteElementString("Flags",          Convert.ToString((uint)landData.Flags));
@@ -227,13 +232,8 @@ namespace OpenSim.Framework.Serialization.External
             xtw.WriteElementString("MediaURL",       landData.MediaURL);
             xtw.WriteElementString("MusicURL",       landData.MusicURL);
 
-            UUID ownerIdToWrite;
-            if (options != null && options.ContainsKey("wipe-owners"))
-                ownerIdToWrite = UUID.Zero;                
-            else
-                ownerIdToWrite = landData.OwnerID;
-
-            xtw.WriteElementString("OwnerID",        ownerIdToWrite.ToString());
+            UUID ownerID = options.ContainsKey("wipe-owners") ? UUID.Zero : landData.OwnerID;
+            xtw.WriteElementString("OwnerID",        ownerID.ToString());
 
             xtw.WriteStartElement("ParcelAccessList");
             foreach (LandAccessEntry pal in landData.ParcelAccessList)

@@ -208,7 +208,7 @@ namespace OpenSim.Region.CoreModules.Framework.EntityTransfer
         protected virtual void InitialiseCommon(IConfigSource source)
         {
             string transferVersionName = "SIMULATION";
-            float maxTransferVersion = 0.2f;
+            float maxTransferVersion = 0.3f;
 
             IConfig hypergridConfig = source.Configs["Hypergrid"];
             if (hypergridConfig != null)
@@ -760,8 +760,9 @@ namespace OpenSim.Region.CoreModules.Framework.EntityTransfer
 
             string reason;
             string version;
+            string myversion = string.Format("{0}/{1}", OutgoingTransferVersionName, MaxOutgoingTransferVersion);
             if (!Scene.SimulationService.QueryAccess(
-                finalDestination, sp.ControllingClient.AgentId, homeURI, true, position, out version, out reason))
+                finalDestination, sp.ControllingClient.AgentId, homeURI, true, position, myversion, out version, out reason))
             {
                 sp.ControllingClient.SendTeleportFailed(reason);
 
@@ -820,7 +821,10 @@ namespace OpenSim.Region.CoreModules.Framework.EntityTransfer
                 agentCircuit.Id0 = currentAgentCircuit.Id0;
             }
 
-            if (NeedsNewAgent(sp.DrawDistance, oldRegionX, newRegionX, oldRegionY, newRegionY))
+            // if (NeedsNewAgent(sp.DrawDistance, oldRegionX, newRegionX, oldRegionY, newRegionY))
+            float dist = (float)Math.Max(sp.Scene.DefaultDrawDistance,
+                (float)Math.Max(sp.Scene.RegionInfo.RegionSizeX, sp.Scene.RegionInfo.RegionSizeY));
+            if (NeedsNewAgent(dist, oldRegionX, newRegionX, oldRegionY, newRegionY))
             {
                 // brand new agent, let's create a new caps seed
                 agentCircuit.CapsPath = CapsUtil.GetRandomCapsObjectPath();
@@ -833,7 +837,7 @@ namespace OpenSim.Region.CoreModules.Framework.EntityTransfer
             if (versionComponents.Length >= 2)
                 float.TryParse(versionComponents[1], out versionNumber);
 
-            if (versionNumber == 0.2f && MaxOutgoingTransferVersion >= versionNumber)
+            if (versionNumber >= 0.2f && MaxOutgoingTransferVersion >= versionNumber)
                 TransferAgent_V2(sp, agentCircuit, reg, finalDestination, endPoint, teleportFlags, oldRegionX, newRegionX, oldRegionY, newRegionY, version, out reason);
             else
                 TransferAgent_V1(sp, agentCircuit, reg, finalDestination, endPoint, teleportFlags, oldRegionX, newRegionX, oldRegionY, newRegionY, version, out reason);           
@@ -894,7 +898,9 @@ namespace OpenSim.Region.CoreModules.Framework.EntityTransfer
 
             IClientIPEndpoint ipepClient;
             string capsPath = String.Empty;
-            if (NeedsNewAgent(sp.DrawDistance, oldRegionX, newRegionX, oldRegionY, newRegionY))
+            float dist = (float)Math.Max(sp.Scene.DefaultDrawDistance,
+                (float)Math.Max(sp.Scene.RegionInfo.RegionSizeX, sp.Scene.RegionInfo.RegionSizeY));
+            if (NeedsNewAgent(dist, oldRegionX, newRegionX, oldRegionY, newRegionY))
             {
                 m_log.DebugFormat(
                     "[ENTITY TRANSFER MODULE]: Determined that region {0} at {1},{2} needs new child agent for incoming agent {3} from {4}",
@@ -1070,7 +1076,7 @@ namespace OpenSim.Region.CoreModules.Framework.EntityTransfer
 
             // Finally, let's close this previously-known-as-root agent, when the jump is outside the view zone
 
-            if (NeedsClosing(sp.DrawDistance, oldRegionX, newRegionX, oldRegionY, newRegionY, reg))
+            if (NeedsClosing(sp.Scene.DefaultDrawDistance, oldRegionX, newRegionX, oldRegionY, newRegionY, reg))
             {
                 if (!sp.Scene.IncomingPreCloseClient(sp))
                     return;
@@ -1140,7 +1146,9 @@ namespace OpenSim.Region.CoreModules.Framework.EntityTransfer
 
             IClientIPEndpoint ipepClient;
             string capsPath = String.Empty;
-            if (NeedsNewAgent(sp.DrawDistance, oldRegionX, newRegionX, oldRegionY, newRegionY))
+            float dist = (float)Math.Max(sp.Scene.DefaultDrawDistance, 
+                (float)Math.Max(sp.Scene.RegionInfo.RegionSizeX, sp.Scene.RegionInfo.RegionSizeY));
+            if (NeedsNewAgent(dist, oldRegionX, newRegionX, oldRegionY, newRegionY))
             {
                 m_log.DebugFormat(
                     "[ENTITY TRANSFER MODULE]: Determined that region {0} at {1},{2} needs new child agent for agent {3} from {4}",
@@ -1236,7 +1244,7 @@ namespace OpenSim.Region.CoreModules.Framework.EntityTransfer
             sp.MakeChildAgent();
 
             // Finally, let's close this previously-known-as-root agent, when the jump is outside the view zone
-            if (NeedsClosing(sp.DrawDistance, oldRegionX, newRegionX, oldRegionY, newRegionY, reg))
+            if (NeedsClosing(sp.Scene.DefaultDrawDistance, oldRegionX, newRegionX, oldRegionY, newRegionY, reg))
             {
                 if (!sp.Scene.IncomingPreCloseClient(sp))
                     return;
@@ -1509,8 +1517,9 @@ namespace OpenSim.Region.CoreModules.Framework.EntityTransfer
                 }
 
                 // Check to see if we have access to the target region.
+                string myversion = string.Format("{0}/{1}", OutgoingTransferVersionName, MaxOutgoingTransferVersion);
                 if (neighbourRegion != null
-                    && !scene.SimulationService.QueryAccess(neighbourRegion, agentID, homeURI, false, newpos, out version, out failureReason))
+                    && !scene.SimulationService.QueryAccess(neighbourRegion, agentID, homeURI, false, newpos, myversion, out version, out failureReason))
                 {
                     // remember banned
                     m_bannedRegionCache.Add(neighbourRegion.RegionHandle, agentID);
@@ -1520,7 +1529,7 @@ namespace OpenSim.Region.CoreModules.Framework.EntityTransfer
             else
             {
                 // The destination region just doesn't exist
-                failureReason = "Cannot cross into non-existant region";
+                failureReason = "Cannot cross into non-existent region";
             }
 
             if (neighbourRegion == null)
@@ -1777,8 +1786,8 @@ namespace OpenSim.Region.CoreModules.Framework.EntityTransfer
             m_entityTransferStateMachine.ResetFromTransit(agent.UUID);
 
             // now we have a child agent in this region. Request all interesting data about other (root) agents
-            agent.SendOtherAgentsAvatarDataToMe();
-            agent.SendOtherAgentsAppearanceToMe();
+            agent.SendOtherAgentsAvatarDataToClient();
+            agent.SendOtherAgentsAppearanceToClient();
 
             // Backwards compatibility. Best effort
             if (version == "Unknown" || version == string.Empty)
@@ -1864,7 +1873,15 @@ namespace OpenSim.Region.CoreModules.Framework.EntityTransfer
             //foreach (ulong h in agent.ChildrenCapSeeds.Keys)
             //    m_log.DebugFormat("[XXX] --> {0}", h);
             //m_log.DebugFormat("[XXX] Adding {0}", region.RegionHandle);
-            agent.ChildrenCapSeeds.Add(region.RegionHandle, agent.CapsPath);
+            if (agent.ChildrenCapSeeds.ContainsKey(region.RegionHandle))
+            {
+                m_log.WarnFormat(
+                    "[ENTITY TRANSFER]: Overwriting caps seed {0} with {1} for region {2} (handle {3}) for {4} in {5}", 
+                    agent.ChildrenCapSeeds[region.RegionHandle], agent.CapsPath, 
+                    region.RegionName, region.RegionHandle, sp.Name, Scene.Name);
+            }
+
+            agent.ChildrenCapSeeds[region.RegionHandle] = agent.CapsPath;
 
             if (sp.Scene.CapsModule != null)
             {
@@ -2366,7 +2383,7 @@ namespace OpenSim.Region.CoreModules.Framework.EntityTransfer
             {
                 // The area to check is as big as the current region.
                 // We presume all adjacent regions are the same size as this region.
-                uint dd = Math.Max((uint)avatar.DrawDistance, 
+                uint dd = Math.Max((uint)avatar.Scene.DefaultDrawDistance, 
                                 Math.Max(Scene.RegionInfo.RegionSizeX, Scene.RegionInfo.RegionSizeY));
 
                 uint startX = Util.RegionToWorldLoc(pRegionLocX) - dd + Constants.RegionSize/2;
