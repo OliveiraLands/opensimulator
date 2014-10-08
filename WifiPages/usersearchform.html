@@ -1,0 +1,14 @@
+  <p>Retrieve accounts</p>
+  <ul>
+    <li>Enter a single space character to list all accounts.</li>
+    <li>Other search terms must be at least 3 characters long.</li>
+    <li>For case-insensitive search, preceed a term with a space character.</li>
+  </ul>
+  <form action="/wifi/admin/users" method="post">
+  <p class="bodytext"> 
+    <input name="terms" type="text" class="inputstyle" />&nbsp;
+    <input type="submit" value="search" class="button" />
+  </p>
+  </form>
+
+  <!-- #call method=GetPendingUserList --> 

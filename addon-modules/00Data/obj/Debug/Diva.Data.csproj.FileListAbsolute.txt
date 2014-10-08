@@ -1,0 +1,5 @@
+C:\Home\dev\csharp\OPENSIM-projects\opensim-oliv\bin\Diva.Data.dll
+C:\Home\dev\csharp\OPENSIM-projects\opensim-oliv\bin\Diva.Data.pdb
+C:\Home\dev\csharp\OPENSIM-projects\opensim-oliv\addon-modules\00Data\obj\Debug\Diva.Data.csprojResolveAssemblyReference.cache
+C:\Home\dev\csharp\OPENSIM-projects\opensim-oliv\addon-modules\00Data\obj\Debug\Diva.Data.dll
+C:\Home\dev\csharp\OPENSIM-projects\opensim-oliv\addon-modules\00Data\obj\Debug\Diva.Data.pdb

@@ -1,0 +1,5 @@
+C:\Home\dev\csharp\OPENSIM-projects\opensim-oliv\bin\Diva.Data.SQLite.dll
+C:\Home\dev\csharp\OPENSIM-projects\opensim-oliv\bin\Diva.Data.SQLite.pdb
+C:\Home\dev\csharp\OPENSIM-projects\opensim-oliv\addon-modules\00Data\SQLite\obj\Debug\Diva.Data.SQLite.csprojResolveAssemblyReference.cache
+C:\Home\dev\csharp\OPENSIM-projects\opensim-oliv\addon-modules\00Data\SQLite\obj\Debug\Diva.Data.SQLite.dll
+C:\Home\dev\csharp\OPENSIM-projects\opensim-oliv\addon-modules\00Data\SQLite\obj\Debug\Diva.Data.SQLite.pdb

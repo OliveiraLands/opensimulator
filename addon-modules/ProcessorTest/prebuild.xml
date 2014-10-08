@@ -1,0 +1,29 @@
+<Project frameworkVersion="v4_0" name="Diva.Wifi.ProcessorTest" path="addon-modules/ProcessorTest" type="Exe">
+  <Configuration name="Debug">
+    <Options>
+      <OutputPath>../../bin/</OutputPath>
+    </Options>
+  </Configuration>
+  <Configuration name="Release">
+    <Options>
+      <OutputPath>../../bin/</OutputPath>
+    </Options>
+  </Configuration>
+
+  <ReferencePath>../../bin/</ReferencePath>
+  <Reference name="System"/>
+  <Reference name="System.Xml"/>
+
+  <Reference name="Nini" path="../../bin/"/>
+  <Reference name="Mono.Addins" path="../../bin/"/>
+  <Reference name="log4net" path="../../bin/"/>
+
+  <Reference name="Diva.Interfaces"/>
+  <Reference name="Diva.Wifi.ScriptEngine"/>
+  
+  <Files>
+    <Match pattern="*.cs" recurse="true">
+      <Exclude pattern="Tests" />
+    </Match>
+  </Files>
+</Project>

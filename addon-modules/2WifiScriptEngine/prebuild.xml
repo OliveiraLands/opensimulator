@@ -1,0 +1,30 @@
+<!-- Diva.Wifi.ScriptEngine -->
+<Project frameworkVersion="v4_0" name="Diva.Wifi.ScriptEngine" path="addon-modules/2WifiScriptEngine" type="Library">
+  <Configuration name="Debug">
+    <Options>
+      <OutputPath>../../bin/</OutputPath>
+    </Options>
+  </Configuration>
+  <Configuration name="Release">
+    <Options>
+      <OutputPath>../../bin/</OutputPath>
+    </Options>
+  </Configuration>
+
+  <ReferencePath>../../bin/</ReferencePath>
+  <Reference name="System"/>
+  <Reference name="System.Web"/>
+  <Reference name="System.Xml"/>
+
+  <Reference name="Nini" path="../../bin/"/>
+  <Reference name="log4net" path="../../bin/"/>
+
+  <Reference name="Diva.Interfaces"/>
+  <Reference name="Diva.Utils"/>
+
+  <Files>
+    <Match pattern="*.cs" recurse="true">
+      <Exclude pattern="Tests" />
+    </Match>
+  </Files>
+</Project>

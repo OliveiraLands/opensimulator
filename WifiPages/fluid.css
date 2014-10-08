@@ -1,0 +1,354 @@
+﻿* {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-size:100%;
+  font-family: Arial,'Lucida Grande',Verdana,sans-serif;
+  text-align:center;
+  background:#000 repeat-y top center;
+  color:#929292;
+}
+
+table th {
+  white-space:nowrap;
+}
+
+#header {
+  height:1.1em;
+  background:transparent;
+  margin:0 auto 0 auto;
+  padding-top:3.2em;
+}
+
+.textlogo {
+  color:#f67d15;
+}
+p.textlogo {
+  text-align:left;
+  font:16px Georgia, Arial, "Times New Roman", Times;
+  padding-left:6em;
+}
+
+.white {
+  color:#FFF;
+}
+
+.nowrap {
+  white-space:nowrap;
+}
+
+#slogan {
+  text-align:left;
+  padding-left:9em;
+  font:bold 16px Arial, "Times New Roman", Times;
+  color:#FFF;
+}
+
+#page {
+  margin:0 auto 0 auto;
+  position:relative;
+}
+
+#content {
+  margin-right:17em;
+  padding:2.4em;
+}
+
+img {display:inline-block;}
+.box {
+  font:14px Arial, Tahoma, Georgia, "Times New Roman", Times;
+  background:#0F0F0F;
+  color:#929292;
+  text-align:justify;
+  padding:0 2.25em;
+}
+.box a {color:#FFF; text-decoration:underline;}
+.box a:hover {color:#BD6B54; text-decoration:none;}
+.box p {padding:0.4em 0;}
+.box li {list-style-position:inside;}
+.box h1,h2,h3,h4,h5 {font:36px Georgia, Arial, "Times New Roman", Times; color:#FFF; text-align:right;}
+.box-top {background:#0F0F0F; margin:0px 24px; height:24px;}
+.box-top-left {background:url(images/box-top.gif) no-repeat 0% 0%; margin-left:-24px; height:24px; width:24px; float:left;}
+.box-top-right {background:url(images/box-top.gif) no-repeat 100% 0%; margin-right:-24px; height:24px; width:24px; float:right;}
+.box-bottom {background:#0F0F0F; margin:0px 24px; height:24px;}
+.box-bottom-left {background:url(images/box-bottom.gif) no-repeat 0% 100%; margin-left:-24px; height:24px; width:24px; float:left;}
+.box-bottom-right {background:url(images/box-bottom.gif) no-repeat 100% 100%; margin-right:-24px; height:24px; width:24px; float:right;}
+
+table.entries {
+  margin-right:auto;
+  border-collapse:collapse;
+  border:3px ridge #444;
+}
+.entries th, .entries td {
+  border:1px solid #444;
+  padding:2px 3px;
+}
+.entries th {
+  border-bottom:3px ridge #444;
+  background-repeat:no-repeat;
+  background-position:right center;
+}
+
+.headerSortable {
+  background-image:url(images/sortable.gif);
+}
+.headerSortAscending {
+  background-image:url(images/sortasc.gif);
+}
+.headerSortDescending {
+  background-image:url(images/sortdesc.gif);
+}
+
+#hyperlinks th.xloc, th.yloc {
+  text-align:center;
+}
+#hyperlinks td.xloc, td.yloc {
+  text-align:right;
+}
+
+#hyperlinkform input[name="address"] {
+  width:20em;
+}
+
+#inventory p {
+  text-align:left;
+}
+#inventory #loading, #inventory #settings {
+  display:none;
+  padding:0 0 0 1em;
+}
+#inventory #loading img {
+  height:1.4em;
+  position:relative;
+  top:0.4em;
+}
+#inventory #settings span {
+  padding:0 0 0 1em;
+}
+#inventory div.bodytext {
+  text-align:left;
+  cursor:default;
+}
+#inventory .item {
+  line-height:125%;
+}
+#inventory .itemtype {
+  float:right;
+  width:6em; /* may have to be increased for translations with longer words */
+  padding-left:0.8em;
+}
+
+.bodytext {
+  color:#FFF;
+  font-size:14px;
+}
+
+td.username, td.email, td.usertitle {
+  text-align:left;
+}
+td.userlevel {
+  text-align:center;
+}
+/*
+.date {
+  font:18px Georgia, Arial, "Times New Roman", Times;
+  color:#FFF;
+  padding:1.1em 0 1.1em 1.8em;
+  text-align:left;
+}
+*/
+.imagefloat {
+  float:left;
+  margin:0.4em 1em;
+  padding:0;
+  border:1px solid #000;
+}
+.image-text-right {
+  padding:0.4em;
+  margin:0.4em 0;
+  width:100%;
+  height:auto;
+  text-align:justify;
+}
+
+.image-text-right span {
+  font:18px Georgia, Arial, "Times New Roman", Times;
+  color:#FFF;
+  text-align:left;
+}
+
+.clearboth {clear:both;}
+
+#right-nav {
+  float:right;
+  margin-left:2.1em;
+  padding-top:2em;
+  padding-bottom:1.5em;
+  width:17em;
+  text-align:left;
+}
+
+.nav-headline {
+  font:19px Georgia, Arial, "Times New Roman", Times;
+  color:#FFF;
+  text-align:left;
+  padding-bottom:0.55em;
+}
+
+#main-menu ul,
+#gridusers-menu ul,
+#addons-menu ul {
+  list-style:none;
+  padding-bottom:0.55em;
+}
+  
+#main-menu li a,
+#gridusers-menu li a,
+#addons-menu li a {
+  color:#FFF;
+  font-family: Arial, "Times New Roman", Times, serif;
+  font-size: 14px;
+  text-decoration: none;
+  background: transparent url(images/menu-button.gif) no-repeat left center;
+  padding:0 0.25em 0 1.75em;
+  line-height:215%;
+}
+  
+#main-menu li a:hover,
+#gridusers-menu li a:hover,
+#addons-menu li a:hover {
+  color:#8C8D94;
+  text-decoration: underline;
+}
+  
+.right-nav-divider {
+  background: transparent url(images/line.gif) repeat-x top left;
+  width:16em;
+  height:1px;
+  padding-bottom:1em;
+}
+  
+#posts {  
+  color:#929292;
+}
+  
+#posts ul {
+  list-style:none;
+  padding:0 0 0.7em 1.25em;
+}
+  
+#posts li a {
+  color:#929292;
+  font-family: Arial, "Times New Roman", Times, serif;
+  font-size: 14px;
+  text-decoration: underline;
+  line-height:145%;
+}
+  
+#posts li a:hover {
+  color:#8C8D94;
+  background:#FFF;
+  text-decoration: none;
+}
+
+#subscribe {
+  text-align:right;
+  padding-right:2.1em;
+}
+
+#subscribe input {
+  margin:0.4em 0;
+}
+
+.inputstyle {
+  background:#090909;
+  border:1px solid #404040;
+  width:13em;
+  height:1.6em;
+  color:#FFF;
+  font-size:14px;
+  padding-top:0.35em;
+  padding-left:0.7em;
+  padding-right:0.7em;
+}
+
+.textareastyle {
+  background:#090909;
+  border:1px solid #404040;
+  width:20em;
+  height:3.2em;
+  color:#FFF;
+  font-size:14px;
+  padding-top:0.35em;
+  padding-left:0.7em;
+  padding-right:0.7em;
+}
+
+.button {
+  background:transparent url(images/button.gif) no-repeat top left;
+  vertical-align:middle;
+  padding-bottom:5px;
+  border:none;
+  width:126px;
+  height:31px;
+  color:#FFFFFF;
+  font:bold 13px Arial, Georgia, "Times New Roman", Times;
+  cursor:pointer;
+  margin-left:0.385em;
+}
+
+.avatar {
+  margin-left:1em;
+}
+
+#footer {
+  clear:both;
+  margin:0 auto;
+}
+
+#footer-pad {
+  margin-right:17em;
+  padding:0 2em 1.5em;
+  text-align:center;
+}
+
+#footer p {
+  font:14px Arial, "Times New Roman", Times;
+  color:#929292;
+}
+
+#footer a {
+  color:#FFF;
+  text-decoration:underline;
+}
+
+#footer a:hover {
+  color:#BD6B54;
+  text-decoration:none;
+}
+
+#right-footer {
+  float:right;
+  width:17em;
+  text-align:center;
+}
+
+.logo {
+    border-style:none;
+}
+
+.line {
+  background: transparent url(images/line.gif) repeat-x top left;
+  height:1px;
+  padding-bottom:0.75em;
+  margin-right:1.1em;
+  margin-left:1.1em;
+}
+
+.line2 {
+  background: transparent url(images/line.gif) repeat-x top left;
+  height:1px;
+  margin:1.1em auto 0.75em auto;
+}

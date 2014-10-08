@@ -1,0 +1,5 @@
+C:\Home\dev\csharp\OPENSIM\diva-distribution\bin\Diva.Data.SQLite.dll
+C:\Home\dev\csharp\OPENSIM\diva-distribution\bin\Diva.Data.SQLite.pdb
+C:\Home\dev\csharp\OPENSIM\diva-distribution\addon-modules\0Data\SQLite\obj\Debug\Diva.Data.SQLite.csprojResolveAssemblyReference.cache
+C:\Home\dev\csharp\OPENSIM\diva-distribution\addon-modules\0Data\SQLite\obj\Debug\Diva.Data.SQLite.dll
+C:\Home\dev\csharp\OPENSIM\diva-distribution\addon-modules\0Data\SQLite\obj\Debug\Diva.Data.SQLite.pdb

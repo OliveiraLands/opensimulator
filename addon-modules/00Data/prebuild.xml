@@ -1,0 +1,27 @@
+<!-- Diva.Data -->
+<Project frameworkVersion="v4_0" name="Diva.Data" path="addon-modules/00Data" type="Library">
+  <Configuration name="Debug">
+    <Options>
+      <OutputPath>../../bin/</OutputPath>
+    </Options>
+  </Configuration>
+  <Configuration name="Release">
+    <Options>
+      <OutputPath>../../bin/</OutputPath>
+    </Options>
+  </Configuration>
+
+  <ReferencePath>../../bin/</ReferencePath>
+  <Reference name="System"/>
+  <Reference name="System.Core"/>
+  
+  <Reference name="OpenMetaverseTypes" path="../../bin/"/>
+
+  <Reference name="OpenSim.Data"/>
+
+  <Files>
+    <Match pattern="*.cs" recurse="false">
+      <Exclude pattern="Tests" />
+    </Match>
+  </Files>
+</Project>

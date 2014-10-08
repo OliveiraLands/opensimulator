@@ -1,0 +1,5 @@
+C:\Home\dev\csharp\OPENSIM\diva-distribution\bin\Diva.Data.MySQL.dll
+C:\Home\dev\csharp\OPENSIM\diva-distribution\bin\Diva.Data.MySQL.pdb
+C:\Home\dev\csharp\OPENSIM\diva-distribution\addon-modules\0Data\MySQL\obj\Debug\Diva.Data.MySQL.csprojResolveAssemblyReference.cache
+C:\Home\dev\csharp\OPENSIM\diva-distribution\addon-modules\0Data\MySQL\obj\Debug\Diva.Data.MySQL.dll
+C:\Home\dev\csharp\OPENSIM\diva-distribution\addon-modules\0Data\MySQL\obj\Debug\Diva.Data.MySQL.pdb

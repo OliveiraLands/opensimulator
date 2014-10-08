@@ -1,0 +1,5 @@
+C:\Home\dev\csharp\OPENSIM-projects\opensim-oliv\bin\Diva.Interfaces.dll
+C:\Home\dev\csharp\OPENSIM-projects\opensim-oliv\bin\Diva.Interfaces.pdb
+C:\Home\dev\csharp\OPENSIM-projects\opensim-oliv\addon-modules\00DivaInterfaces\obj\Debug\Diva.Interfaces.csprojResolveAssemblyReference.cache
+C:\Home\dev\csharp\OPENSIM-projects\opensim-oliv\addon-modules\00DivaInterfaces\obj\Debug\Diva.Interfaces.dll
+C:\Home\dev\csharp\OPENSIM-projects\opensim-oliv\addon-modules\00DivaInterfaces\obj\Debug\Diva.Interfaces.pdb

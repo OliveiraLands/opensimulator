@@ -1,0 +1,5 @@
+C:\Home\dev\csharp\OPENSIM-projects\opensim-oliv\bin\Diva.Data.MySQL.dll
+C:\Home\dev\csharp\OPENSIM-projects\opensim-oliv\bin\Diva.Data.MySQL.pdb
+C:\Home\dev\csharp\OPENSIM-projects\opensim-oliv\addon-modules\00Data\MySQL\obj\Debug\Diva.Data.MySQL.csprojResolveAssemblyReference.cache
+C:\Home\dev\csharp\OPENSIM-projects\opensim-oliv\addon-modules\00Data\MySQL\obj\Debug\Diva.Data.MySQL.dll
+C:\Home\dev\csharp\OPENSIM-projects\opensim-oliv\addon-modules\00Data\MySQL\obj\Debug\Diva.Data.MySQL.pdb
