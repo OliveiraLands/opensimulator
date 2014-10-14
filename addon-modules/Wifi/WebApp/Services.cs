@@ -351,7 +351,7 @@ namespace Diva.Wifi
             try
             {
                 MailMessage msg = new MailMessage();
-                msg.From = new MailAddress(m_WebApp.SmtpUsername);
+                msg.From = new MailAddress(m_WebApp.SmtpFromEmail);
                 msg.To.Add(new MailAddress(to));
                 msg.Subject = "[" + m_WebApp.GridName + "] " + subject;
                 msg.Body = message;
@@ -371,7 +371,7 @@ namespace Diva.Wifi
             try
             {
                 MailMessage msg = new MailMessage();
-                msg.From = new MailAddress(m_WebApp.SmtpUsername);
+                msg.From = new MailAddress(m_WebApp.SmtpFromEmail);
                 msg.To.Add(new MailAddress(to));
                 msg.Subject = "[" + m_WebApp.GridName + "] " + subject;
                 msg.Body = message;

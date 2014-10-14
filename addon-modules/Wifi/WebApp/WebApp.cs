@@ -232,6 +232,12 @@ namespace Diva.Wifi
             get { return m_SmtpUsername; }
         }
 
+        private string m_SmtpFromEmail;
+        public string SmtpFromEmail
+        {
+            get { return m_SmtpFromEmail; }
+        }
+
         private string m_SmtpPassword;
         public string SmtpPassword
         {
@@ -298,6 +304,7 @@ namespace Diva.Wifi
             m_SmtpHost = appConfig.GetString("SmtpHost", "smtp.gmail.com");
             m_SmtpPort = Int32.Parse(appConfig.GetString("SmtpPort", "587"));
             m_SmtpUsername = appConfig.GetString("SmtpUsername", "your_email@gmail.com");
+            m_SmtpFromEmail = appConfig.GetString("SmtpFromEmail", m_SmtpUsername);
             m_SmtpPassword = appConfig.GetString("SmtpPassword", "your_password");
 
             m_AdminFirst = appConfig.GetString("AdminFirst", string.Empty);
