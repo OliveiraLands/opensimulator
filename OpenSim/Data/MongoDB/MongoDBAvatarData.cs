@@ -30,8 +30,10 @@ using System.Collections.Generic;
 using System.Reflection;
 using System.Threading;
 using log4net;
+using MongoDB.Driver;
 using OpenMetaverse;
 using OpenSim.Framework;
+using OpenSim.Services.Interfaces;
 
 
 namespace OpenSim.Data.MongoDB
@@ -51,20 +53,22 @@ namespace OpenSim.Data.MongoDB
 
         public bool Delete(UUID principalID, string name)
         {
-            using (NpgsqlConnection conn = new NpgsqlConnection(m_ConnectionString))
-            using (NpgsqlCommand cmd = new NpgsqlCommand())
-            {
+            var mongoClient = new MongoClient(m_ConnectionString);
+            var db = mongoClient.GetDatabase(m_database.GetDatabaseName());
+            var collection = db.GetCollection<AvatarBaseData>(m_Realm); // Substitua 'YourDocumentType' pelo tipo de documento correto
 
-                cmd.CommandText = String.Format("DELETE FROM {0} where \"PrincipalID\" = :PrincipalID and \"Name\" = :Name", m_Realm);
-                cmd.Parameters.Add(m_database.CreateParameter("PrincipalID", principalID));
-                cmd.Parameters.Add(m_database.CreateParameter("Name", name));
-                cmd.Connection = conn;
-                conn.Open();
-                if (cmd.ExecuteNonQuery() > 0)
-                    return true;
+            var filter = Builders<AvatarBaseData>.Filter.And(
+                Builders<AvatarBaseData>.Filter.Eq(doc => doc.PrincipalID, principalID), // Assumindo que existe uma propriedade PrincipalID
+                Builders<AvatarBaseData>.Filter.ElemMatch(doc => doc.Data,
+                Builders<KeyValuePair<string, string>>.Filter.And(
+                    Builders<KeyValuePair<string, string>>.Filter.Eq(kv => kv.Key, "name"), // Verifica a chave "name"
+                    Builders<KeyValuePair<string, string>>.Filter.Eq(kv => kv.Value, name) // Verifica o valor correspondente
+                ))
+            );
 
-                return false;
-            }
+            var result = collection.DeleteOne(filter); // Remove um único documento que corresponde ao filtro
+
+            return result.DeletedCount > 0; // Retorna true se um documento foi deletado
         }
     }
 }

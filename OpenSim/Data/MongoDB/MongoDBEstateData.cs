@@ -33,8 +33,8 @@ using OpenMetaverse;
 using OpenSim.Framework;
 using OpenSim.Region.Framework.Interfaces;
 using System.Data;
-using Npgsql;
-using NpgsqlTypes;
+using MongoDB.Bson;
+using MongoDB.Driver;
 
 namespace OpenSim.Data.MongoDB
 {
@@ -77,6 +77,7 @@ namespace OpenSim.Data.MongoDB
                 _Database = new MongoDBManager(connectionString);
             }
 
+            /*
             //Migration settings
             using (NpgsqlConnection conn = new NpgsqlConnection(m_connectionString))
             {
@@ -84,6 +85,7 @@ namespace OpenSim.Data.MongoDB
                 Migration m = new Migration(conn, GetType().Assembly, "EstateStore");
                 m.Update();
             }
+            */
 
             //Interesting way to get parameters! Maybe implement that also with other types
             Type t = typeof(EstateSettings);
@@ -107,72 +109,79 @@ namespace OpenSim.Data.MongoDB
         {
             EstateSettings es = new EstateSettings();
 
-            string sql = "select estate_settings.\"" + String.Join("\",estate_settings.\"", FieldList) +
-                         "\" from estate_map left join estate_settings on estate_map.\"EstateID\" = estate_settings.\"EstateID\" " +
-                         " where estate_settings.\"EstateID\" is not null and \"RegionID\" = :RegionID";
+            // Obtenha a coleção de "estate_settings"
+            var mongoClient = new MongoClient(m_connectionString);
+            var db = mongoClient.GetDatabase(_Database.GetDatabaseName());
+            var estateSettingsCollection = db.GetCollection<BsonDocument>("estate_settings");
+            var estateMapCollection = db.GetCollection<BsonDocument>("estate_map");
+
+            // Filtro para procurar o EstateSettings pelo RegionID na coleção estate_map
+            var filter = Builders<BsonDocument>.Filter.And(
+                Builders<BsonDocument>.Filter.Eq("RegionID", regionID),
+                Builders<BsonDocument>.Filter.Ne("EstateID", BsonNull.Value)
+            );
 
             bool insertEstate = false;
-            using (NpgsqlConnection conn = new NpgsqlConnection(m_connectionString))
-            using (NpgsqlCommand cmd = new NpgsqlCommand(sql, conn))
+            var estateDoc = estateMapCollection.Find(filter).FirstOrDefault();
+
+            if (estateDoc != null)
             {
-                cmd.Parameters.Add(_Database.CreateParameter("RegionID", regionID));
-                conn.Open();
-                using (NpgsqlDataReader reader = cmd.ExecuteReader())
+                // Itera por cada campo na lista FieldList e define os valores
+                foreach (string name in FieldList)
                 {
-                    if (reader.Read())
+                    FieldInfo f = _FieldMap[name];
+                    BsonValue v = estateDoc.Contains(name) ? estateDoc[name] : BsonNull.Value;
+
+                    if (!v.IsBsonNull)
                     {
-                        foreach (string name in FieldList)
+                        if (f.FieldType == typeof(bool))
                         {
-                            FieldInfo f = _FieldMap[name];
-                            object v = reader[name];
-                            if (f.FieldType == typeof(bool))
-                            {
-                                f.SetValue(es, v);
-                            }
-                            else if (f.FieldType == typeof(UUID))
-                            {
-                                UUID estUUID = UUID.Zero;
-
-                                UUID.TryParse(v.ToString(), out estUUID);
-
-                                f.SetValue(es, estUUID);
-                            }
-                            else if (f.FieldType == typeof(string))
-                            {
-                                f.SetValue(es, v.ToString());
-                            }
-                            else if (f.FieldType == typeof(UInt32))
-                            {
-                                f.SetValue(es, Convert.ToUInt32(v));
-                            }
-                            else if (f.FieldType == typeof(Single))
-                            {
-                                f.SetValue(es, Convert.ToSingle(v));
-                            }
-                            else
-                                f.SetValue(es, v);
+                            f.SetValue(es, v.AsBoolean);
                         }
-                    }
-                    else
-                    {
-                        insertEstate = true;
+                        else if (f.FieldType == typeof(UUID))
+                        {
+                            UUID estUUID;
+                            UUID.TryParse(v.AsString, out estUUID);
+                            f.SetValue(es, estUUID);
+                        }
+                        else if (f.FieldType == typeof(string))
+                        {
+                            f.SetValue(es, v.AsString);
+                        }
+                        else if (f.FieldType == typeof(UInt32))
+                        {
+                            f.SetValue(es, Convert.ToUInt32(v.AsInt32));
+                        }
+                        else if (f.FieldType == typeof(Single))
+                        {
+                            f.SetValue(es, Convert.ToSingle(v.AsDouble));
+                        }
+                        else
+                        {
+                            f.SetValue(es, v);
+                        }
                     }
                 }
             }
+            else
+            {
+                insertEstate = true;
+            }
 
+            // Insere uma nova entrada de estate se necessário
             if (insertEstate && create)
             {
                 DoCreate(es);
                 LinkRegion(regionID, (int)es.EstateID);
             }
 
+            // Carrega listas associadas
             LoadBanList(es);
-
             es.EstateManagers = LoadUUIDList(es.EstateID, "estate_managers");
             es.EstateAccess = LoadUUIDList(es.EstateID, "estate_users");
             es.EstateGroups = LoadUUIDList(es.EstateID, "estate_groups");
 
-            //Set event
+            // Evento para salvar as configurações da propriedade
             es.OnSave += StoreEstateSettings;
             return es;
         }
@@ -197,46 +206,55 @@ namespace OpenSim.Data.MongoDB
 
         private void DoCreate(EstateSettings es)
         {
+            // Obtenha a lista de campos para inserir
             List<string> names = new List<string>(FieldList);
 
-            // Remove EstateID and use AutoIncrement
+            // Simule um AutoIncrement se EstateID for menor que 100
             if (es.EstateID < 100)
-                names.Remove("EstateID");
-
-            string sql = string.Format("insert into estate_settings (\"{0}\") values ( :{1} )", String.Join("\",\"", names.ToArray()), String.Join(", :", names.ToArray()));
-
-            using (NpgsqlConnection conn = new NpgsqlConnection(m_connectionString))
-            using (NpgsqlCommand insertCommand = new NpgsqlCommand(sql, conn))
             {
-                insertCommand.CommandText = sql;
-
-                foreach (string name in names)
-                {
-                    insertCommand.Parameters.Add(_Database.CreateParameter("" + name, _FieldMap[name].GetValue(es)));
-                }
-                //NpgsqlParameter idParameter = new NpgsqlParameter("ID", SqlDbType.Int);
-                //idParameter.Direction = ParameterDirection.Output;
-                //insertCommand.Parameters.Add(idParameter);
-                conn.Open();
-
-                if (insertCommand.ExecuteNonQuery() > 0 && es.EstateID < 100)
-                {
-                    // Only get Auto ID if we actually used it
-                    insertCommand.CommandText = "Select cast(lastval() as int) as ID ;";
-
-                    using (NpgsqlDataReader result = insertCommand.ExecuteReader())
-                    {
-                        if (result.Read())
-                        {
-                            es.EstateID = (uint)result.GetInt32(0);
-                        }
-                    }
-                }
-
+                es.EstateID = GetNextEstateID(); // Função auxiliar para gerar ID
+                names.Remove("EstateID");
             }
 
-            //TODO check if this is needed??
+            // Construa o documento para inserção
+            var estateDoc = new BsonDocument();
+            foreach (string name in names)
+            {
+                FieldInfo f = _FieldMap[name];
+                estateDoc[name] = BsonValue.Create(f.GetValue(es));
+            }
+
+            estateDoc["EstateID"] = es.EstateID;
+
+            // Insere o documento na coleção estate_settings
+            var mongoClient = new MongoClient(m_connectionString);
+            var db = mongoClient.GetDatabase(_Database.GetDatabaseName());
+            var estateSettingsCollection = db.GetCollection<BsonDocument>("estate_settings");
+
+            estateSettingsCollection.InsertOne(estateDoc);
+
+            // Chama Save para persistir o estado (caso necessário)
             es.Save();
+        }
+
+        // Função auxiliar para gerar o próximo EstateID incrementado
+        private uint GetNextEstateID()
+        {
+            var mongoClient = new MongoClient(m_connectionString);
+            var db = mongoClient.GetDatabase(_Database.GetDatabaseName());
+            var counterCollection = db.GetCollection<BsonDocument>("counters");
+
+            // Encontra e incrementa o contador
+            var filter = Builders<BsonDocument>.Filter.Eq("_id", "estateID");
+            var update = Builders<BsonDocument>.Update.Inc("seq", 1);
+            var options = new FindOneAndUpdateOptions<BsonDocument>
+            {
+                ReturnDocument = ReturnDocument.After,
+                IsUpsert = true
+            };
+
+            var result = counterCollection.FindOneAndUpdate(filter, update, options);
+            return (uint)result["seq"].AsInt32;
         }
 
         /// <summary>
@@ -245,31 +263,28 @@ namespace OpenSim.Data.MongoDB
         /// <param name="es">estate settings</param>
         public void StoreEstateSettings(EstateSettings es)
         {
+            // Constrói o documento de atualização excluindo o campo EstateID
             List<string> names = new List<string>(FieldList);
-
             names.Remove("EstateID");
 
-            string sql = string.Format("UPDATE estate_settings SET ");
+            var updateDefinition = new BsonDocument();
             foreach (string name in names)
             {
-                sql += "\"" + name + "\" = :" + name + ", ";
-            }
-            sql = sql.Remove(sql.LastIndexOf(","));
-            sql += " WHERE \"EstateID\" = :EstateID";
-
-            using (NpgsqlConnection conn = new NpgsqlConnection(m_connectionString))
-            using (NpgsqlCommand cmd = new NpgsqlCommand(sql, conn))
-            {
-                foreach (string name in names)
-                {
-                    cmd.Parameters.Add(_Database.CreateParameter("" + name, _FieldMap[name].GetValue(es)));
-                }
-
-                cmd.Parameters.Add(_Database.CreateParameter("EstateID", es.EstateID));
-                conn.Open();
-                cmd.ExecuteNonQuery();
+                FieldInfo f = _FieldMap[name];
+                updateDefinition[name] = BsonValue.Create(f.GetValue(es));
             }
 
+            // Conecta ao MongoDB e atualiza o documento onde EstateID corresponde
+            var mongoClient = new MongoClient(m_connectionString);
+            var db = mongoClient.GetDatabase(_Database.GetDatabaseName());
+            var estateSettingsCollection = db.GetCollection<BsonDocument>("estate_settings");
+
+            var filter = Builders<BsonDocument>.Filter.Eq("EstateID", es.EstateID);
+            var update = new BsonDocument("$set", updateDefinition);
+
+            estateSettingsCollection.UpdateOne(filter, update);
+
+            // Atualiza listas relacionadas
             SaveBanList(es);
             SaveUUIDList(es.EstateID, "estate_managers", es.EstateManagers);
             SaveUUIDList(es.EstateID, "estate_users", es.EstateAccess);
@@ -287,31 +302,29 @@ namespace OpenSim.Data.MongoDB
 
         private void LoadBanList(EstateSettings es)
         {
+            // Limpa a lista de bans antes de carregar os novos
             es.ClearBans();
 
-            string sql = "select * from estateban where \"EstateID\" = :EstateID";
+            var mongoClient = new MongoClient(m_connectionString);
+            var db = mongoClient.GetDatabase(_Database.GetDatabaseName());
+            var estateBanCollection = db.GetCollection<BsonDocument>("estateban");
 
-            using (NpgsqlConnection conn = new NpgsqlConnection(m_connectionString))
-            using (NpgsqlCommand cmd = new NpgsqlCommand(sql, conn))
+            // Define o filtro para buscar apenas bans com o EstateID correspondente
+            var filter = Builders<BsonDocument>.Filter.Eq("EstateID", (int)es.EstateID);
+
+            // Executa a consulta e itera pelos resultados
+            var bans = estateBanCollection.Find(filter).ToList();
+            foreach (var banDoc in bans)
             {
-                NpgsqlParameter idParameter = new NpgsqlParameter("EstateID", DbType.Int32);
-                idParameter.Value = (int)es.EstateID;
-                cmd.Parameters.Add(idParameter);
-                conn.Open();
-                using (NpgsqlDataReader reader = cmd.ExecuteReader())
+                EstateBan eb = new EstateBan
                 {
-                    while (reader.Read())
-                    {
-                        EstateBan eb = new EstateBan();
-
-                        eb.BannedUserID = new UUID((Guid)reader["bannedUUID"]); //uuid;
-                        eb.BanningUserID = new UUID((Guid)reader["banningUUID"]); //uuid;
-                        eb.BanTime = Convert.ToInt32(reader["banTime"]);
-                        eb.BannedHostAddress = "0.0.0.0";
-                        eb.BannedHostIPMask = "0.0.0.0";
-                        es.AddBan(eb);
-                    }
-                }
+                    BannedUserID = new UUID(banDoc["bannedUUID"].AsGuid),
+                    BanningUserID = new UUID(banDoc["banningUUID"].AsGuid),
+                    BanTime = banDoc["banTime"].AsInt32,
+                    BannedHostAddress = "0.0.0.0",
+                    BannedHostIPMask = "0.0.0.0"
+                };
+                es.AddBan(eb);
             }
         }
 
@@ -319,20 +332,19 @@ namespace OpenSim.Data.MongoDB
         {
             List<UUID> uuids = new List<UUID>();
 
-            string sql = string.Format("select uuid from {0} where \"EstateID\" = :EstateID", table);
+            var mongoClient = new MongoClient(m_connectionString);
+            var db = mongoClient.GetDatabase(_Database.GetDatabaseName());
+            var collection = db.GetCollection<BsonDocument>(table);
 
-            using (NpgsqlConnection conn = new NpgsqlConnection(m_connectionString))
-            using (NpgsqlCommand cmd = new NpgsqlCommand(sql, conn))
+            // Define o filtro para buscar UUIDs com o EstateID correspondente
+            var filter = Builders<BsonDocument>.Filter.Eq("EstateID", (int)estateID);
+
+            // Executa a consulta e itera pelos resultados
+            var documents = collection.Find(filter).ToList();
+            foreach (var doc in documents)
             {
-                cmd.Parameters.Add(_Database.CreateParameter("EstateID", (int)estateID));
-                conn.Open();
-                using (NpgsqlDataReader reader = cmd.ExecuteReader())
-                {
-                    while (reader.Read())
-                    {
-                        uuids.Add(new UUID((Guid)reader["uuid"])); //uuid);
-                    }
-                }
+                // Adiciona o UUID à lista
+                uuids.Add(new UUID(doc["uuid"].AsGuid));
             }
 
             return uuids.ToArray();
