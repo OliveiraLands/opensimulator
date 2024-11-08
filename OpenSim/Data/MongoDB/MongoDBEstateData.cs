@@ -49,6 +49,9 @@ namespace OpenSim.Data.MongoDB
         private FieldInfo[] _Fields;
         private Dictionary<string, FieldInfo> _FieldMap = new Dictionary<string, FieldInfo>();
 
+        private MongoClient _mongoClient;
+        private IMongoDatabase _db;
+
         #region Public methods
 
         public PGSQLEstateStore()
@@ -76,6 +79,9 @@ namespace OpenSim.Data.MongoDB
                 m_connectionString = connectionString;
                 _Database = new MongoDBManager(connectionString);
             }
+
+            _mongoClient = new MongoClient(m_connectionString);
+            _db = _mongoClient.GetDatabase(_Database.GetDatabaseName());
 
             /*
             //Migration settings
@@ -110,10 +116,8 @@ namespace OpenSim.Data.MongoDB
             EstateSettings es = new EstateSettings();
 
             // Obtenha a coleção de "estate_settings"
-            var mongoClient = new MongoClient(m_connectionString);
-            var db = mongoClient.GetDatabase(_Database.GetDatabaseName());
-            var estateSettingsCollection = db.GetCollection<BsonDocument>("estate_settings");
-            var estateMapCollection = db.GetCollection<BsonDocument>("estate_map");
+            var estateSettingsCollection = _db.GetCollection<BsonDocument>("estate_settings");
+            var estateMapCollection = _db.GetCollection<BsonDocument>("estate_map");
 
             // Filtro para procurar o EstateSettings pelo RegionID na coleção estate_map
             var filter = Builders<BsonDocument>.Filter.And(
@@ -189,7 +193,7 @@ namespace OpenSim.Data.MongoDB
         public EstateSettings CreateNewEstate(int estateID)
         {
             EstateSettings es = new EstateSettings();
-            
+
             es.OnSave += StoreEstateSettings;
             es.EstateID = Convert.ToUInt32(estateID);
 
@@ -227,9 +231,7 @@ namespace OpenSim.Data.MongoDB
             estateDoc["EstateID"] = es.EstateID;
 
             // Insere o documento na coleção estate_settings
-            var mongoClient = new MongoClient(m_connectionString);
-            var db = mongoClient.GetDatabase(_Database.GetDatabaseName());
-            var estateSettingsCollection = db.GetCollection<BsonDocument>("estate_settings");
+            var estateSettingsCollection = _db.GetCollection<BsonDocument>("estate_settings");
 
             estateSettingsCollection.InsertOne(estateDoc);
 
@@ -240,9 +242,7 @@ namespace OpenSim.Data.MongoDB
         // Função auxiliar para gerar o próximo EstateID incrementado
         private uint GetNextEstateID()
         {
-            var mongoClient = new MongoClient(m_connectionString);
-            var db = mongoClient.GetDatabase(_Database.GetDatabaseName());
-            var counterCollection = db.GetCollection<BsonDocument>("counters");
+            var counterCollection = _db.GetCollection<BsonDocument>("counters");
 
             // Encontra e incrementa o contador
             var filter = Builders<BsonDocument>.Filter.Eq("_id", "estateID");
@@ -275,9 +275,7 @@ namespace OpenSim.Data.MongoDB
             }
 
             // Conecta ao MongoDB e atualiza o documento onde EstateID corresponde
-            var mongoClient = new MongoClient(m_connectionString);
-            var db = mongoClient.GetDatabase(_Database.GetDatabaseName());
-            var estateSettingsCollection = db.GetCollection<BsonDocument>("estate_settings");
+            var estateSettingsCollection = _db.GetCollection<BsonDocument>("estate_settings");
 
             var filter = Builders<BsonDocument>.Filter.Eq("EstateID", es.EstateID);
             var update = new BsonDocument("$set", updateDefinition);
@@ -305,9 +303,7 @@ namespace OpenSim.Data.MongoDB
             // Limpa a lista de bans antes de carregar os novos
             es.ClearBans();
 
-            var mongoClient = new MongoClient(m_connectionString);
-            var db = mongoClient.GetDatabase(_Database.GetDatabaseName());
-            var estateBanCollection = db.GetCollection<BsonDocument>("estateban");
+            var estateBanCollection = _db.GetCollection<BsonDocument>("estateban");
 
             // Define o filtro para buscar apenas bans com o EstateID correspondente
             var filter = Builders<BsonDocument>.Filter.Eq("EstateID", (int)es.EstateID);
@@ -332,9 +328,7 @@ namespace OpenSim.Data.MongoDB
         {
             List<UUID> uuids = new List<UUID>();
 
-            var mongoClient = new MongoClient(m_connectionString);
-            var db = mongoClient.GetDatabase(_Database.GetDatabaseName());
-            var collection = db.GetCollection<BsonDocument>(table);
+            var collection = _db.GetCollection<BsonDocument>(table);
 
             // Define o filtro para buscar UUIDs com o EstateID correspondente
             var filter = Builders<BsonDocument>.Filter.Eq("EstateID", (int)estateID);
@@ -352,100 +346,97 @@ namespace OpenSim.Data.MongoDB
 
         private void SaveBanList(EstateSettings es)
         {
-            //Delete first
-            using (NpgsqlConnection conn = new NpgsqlConnection(m_connectionString))
+            var collection = _db.GetCollection<BsonDocument>("estateban");
+
+            // Delete first
+            var deleteFilter = Builders<BsonDocument>.Filter.Eq("EstateID", (int)es.EstateID);
+            collection.DeleteMany(deleteFilter);
+
+            // Insert after
+            foreach (EstateBan b in es.EstateBans)
             {
-                conn.Open();
-                using (NpgsqlCommand cmd = conn.CreateCommand())
+                var ban = new BsonDocument
                 {
-                    cmd.CommandText = "delete from estateban where \"EstateID\" = :EstateID";
-                    cmd.Parameters.AddWithValue("EstateID", (int)es.EstateID);
-                    cmd.ExecuteNonQuery();
-
-                    //Insert after
-                    cmd.CommandText = "insert into estateban (\"EstateID\", \"bannedUUID\",\"bannedIp\", \"bannedIpHostMask\", \"bannedNameMask\", \"banningUUID\",\"banTime\" ) values ( :EstateID, :bannedUUID, '','','', :banningUUID, :banTime )";
-                    cmd.Parameters.AddWithValue("bannedUUID", Guid.Empty);
-                    foreach (EstateBan b in es.EstateBans)
-                    {
-                        cmd.Parameters["EstateID"].Value = b.EstateID;
-                        cmd.Parameters["bannedUUID"].Value = b.BannedUserID.Guid;
-                        cmd.Parameters["banningUUID"].Value = b.BanningUserID.Guid;
-                        cmd.Parameters["banTime"].Value = b.BanTime;
-
-                        cmd.ExecuteNonQuery();
-                    }
-                }
+                    { "EstateID", b.EstateID },
+                    { "bannedUUID", b.BannedUserID.ToString() },
+                    { "bannedIpHostMask", b.BannedHostIPMask },
+                    { "bannedIp", b.BannedHostAddress },
+                    { "banTime", b.BanTime }
+                };
+                collection.InsertOne(ban);
             }
         }
 
         private void SaveUUIDList(uint estateID, string table, UUID[] data)
         {
-            using (NpgsqlConnection conn = new NpgsqlConnection(m_connectionString))
-            {
-                conn.Open();
-                using (NpgsqlCommand cmd = conn.CreateCommand())
-                {
-                    cmd.Parameters.AddWithValue("EstateID", (int)estateID);
-                    cmd.CommandText = string.Format("delete from {0} where \"EstateID\" = :EstateID", table);
-                    cmd.ExecuteNonQuery();
+            var collection = _db.GetCollection<BsonDocument>(table);
 
-                    cmd.CommandText = string.Format("insert into {0} (\"EstateID\", uuid) values ( :EstateID, :uuid )", table);
-                    cmd.Parameters.AddWithValue("uuid", Guid.Empty);
-                    foreach (UUID uuid in data)
-                    {
-                        cmd.Parameters["uuid"].Value = uuid.Guid; //.ToString(); //TODO check if this works
-                        cmd.ExecuteNonQuery();
-                    }
-                }
+            // Remove todos os documentos associados ao EstateID
+            var filter = Builders<BsonDocument>.Filter.Eq("EstateID", estateID);
+            collection.DeleteMany(filter);
+
+            // Inserir novos documentos com EstateID e UUID
+            var documents = new List<BsonDocument>();
+            foreach (UUID uuid in data)
+            {
+                var document = new BsonDocument
+                {
+                    { "EstateID", estateID },
+                    { "uuid", uuid.ToString() }  // Usando ToString() para armazenar como string
+                };
+                documents.Add(document);
+            }
+
+            if (documents.Count > 0)
+            {
+                collection.InsertMany(documents);
             }
         }
 
         public EstateSettings LoadEstateSettings(int estateID)
         {
             EstateSettings es = new EstateSettings();
-            string sql = "select estate_settings.\"" + String.Join("\",estate_settings.\"", FieldList) + "\" from estate_settings where \"EstateID\" = :EstateID";
-            using (NpgsqlConnection conn = new NpgsqlConnection(m_connectionString))
-            {
-                conn.Open();
-                using (NpgsqlCommand cmd = new NpgsqlCommand(sql, conn))
-                {
-                    cmd.Parameters.AddWithValue("EstateID", estateID);
-                    using (NpgsqlDataReader reader = cmd.ExecuteReader())
-                    {
-                        if (reader.Read())
-                        {
-                            foreach (string name in FieldList)
-                            {
-                                FieldInfo f = _FieldMap[name];
-                                object v = reader[name];
-                                if (f.FieldType == typeof(bool))
-                                {
-                                    f.SetValue(es, Convert.ToInt32(v) != 0);
-                                }
-                                else if (f.FieldType == typeof(UUID))
-                                {
-                                    f.SetValue(es, new UUID((Guid)v)); // uuid);
-                                }
-                                else if (f.FieldType == typeof(string))
-                                {
-                                    f.SetValue(es, v.ToString());
-                                }
-                                else if (f.FieldType == typeof(UInt32))
-                                {
-                                    f.SetValue(es, Convert.ToUInt32(v));
-                                }
-                                else if (f.FieldType == typeof(Single))
-                                {
-                                    f.SetValue(es, Convert.ToSingle(v));
-                                }
-                                else
-                                    f.SetValue(es, v);
-                            }
-                        }
 
+            var collection = _db.GetCollection<BsonDocument>("estate_settings");
+            var filter = Builders<BsonDocument>.Filter.Eq("EstateID", estateID);
+
+            var document = collection.Find(filter).FirstOrDefault();
+            if (document != null)
+            {
+                foreach (string name in FieldList)
+                {
+                    FieldInfo f = _FieldMap[name];
+                    if (document.Contains(name))
+                    {
+                        var value = document[name];
+                        if (f.FieldType == typeof(bool))
+                        {
+                            f.SetValue(es, value.ToInt32() != 0);
+                        }
+                        else if (f.FieldType == typeof(UUID))
+                        {
+                            f.SetValue(es, new UUID(Guid.Parse(value.AsString)));
+                        }
+                        else if (f.FieldType == typeof(string))
+                        {
+                            f.SetValue(es, value.AsString);
+                        }
+                        else if (f.FieldType == typeof(UInt32))
+                        {
+                            f.SetValue(es, Convert.ToUInt32(value.AsInt32));
+                        }
+                        else if (f.FieldType == typeof(Single))
+                        {
+                            f.SetValue(es, Convert.ToSingle(value.AsDouble));
+                        }
+                        else
+                        {
+                            f.SetValue(es, BsonTypeMapper.MapToDotNetValue(value));
+                        }
                     }
                 }
             }
+
             LoadBanList(es);
 
             es.EstateManagers = LoadUUIDList(es.EstateID, "estate_managers");
@@ -455,7 +446,6 @@ namespace OpenSim.Data.MongoDB
             //Set event
             es.OnSave += StoreEstateSettings;
             return es;
-
         }
 
         public List<EstateSettings> LoadEstateSettingsAll()
@@ -473,23 +463,15 @@ namespace OpenSim.Data.MongoDB
         public List<int> GetEstates(string search)
         {
             List<int> result = new List<int>();
-            string sql = "select \"EstateID\" from estate_settings where lower(\"EstateName\") = lower(:EstateName)";
-            using (NpgsqlConnection conn = new NpgsqlConnection(m_connectionString))
-            {
-                conn.Open();
-                using (NpgsqlCommand cmd = new NpgsqlCommand(sql, conn))
-                {
-                    cmd.Parameters.AddWithValue("EstateName", search);
 
-                    using (IDataReader reader = cmd.ExecuteReader())
-                    {
-                        while (reader.Read())
-                        {
-                            result.Add(Convert.ToInt32(reader["EstateID"]));
-                        }
-                        reader.Close();
-                    }
-                }
+            var collection = _db.GetCollection<BsonDocument>("estate_settings");
+            var filter = Builders<BsonDocument>.Filter.Eq("EstateName", search.ToLower());
+
+            var documents = collection.Find(filter).ToList();
+
+            foreach (var document in documents)
+            {
+                result.Add(document["EstateID"].AsInt32);
             }
 
             return result;
@@ -498,21 +480,14 @@ namespace OpenSim.Data.MongoDB
         public List<int> GetEstatesAll()
         {
             List<int> result = new List<int>();
-            string sql = "select \"EstateID\" from estate_settings";
-            using (NpgsqlConnection conn = new NpgsqlConnection(m_connectionString))
+
+            var collection = _db.GetCollection<BsonDocument>("estate_settings");
+
+            var documents = collection.Find(new BsonDocument()).ToList();
+
+            foreach (var document in documents)
             {
-                conn.Open();
-                using (NpgsqlCommand cmd = new NpgsqlCommand(sql, conn))
-                {
-                    using (IDataReader reader = cmd.ExecuteReader())
-                    {
-                        while (reader.Read())
-                        {
-                            result.Add(Convert.ToInt32(reader["EstateID"]));
-                        }
-                        reader.Close();
-                    }
-                }
+                result.Add(document["EstateID"].AsInt32);
             }
 
             return result;
@@ -521,23 +496,16 @@ namespace OpenSim.Data.MongoDB
         public List<int> GetEstatesByOwner(UUID ownerID)
         {
             List<int> result = new List<int>();
-            string sql = "select \"EstateID\" from estate_settings where \"EstateOwner\" = :EstateOwner";
-            using (NpgsqlConnection conn = new NpgsqlConnection(m_connectionString))
-            {
-                conn.Open();
-                using (NpgsqlCommand cmd = new NpgsqlCommand(sql, conn))
-                {
-                    cmd.Parameters.AddWithValue("EstateOwner", ownerID);
 
-                    using (IDataReader reader = cmd.ExecuteReader())
-                    {
-                        while (reader.Read())
-                        {
-                            result.Add(Convert.ToInt32(reader["EstateID"]));
-                        }
-                        reader.Close();
-                    }
-                }
+            var collection = _db.GetCollection<BsonDocument>("estate_settings");
+
+            var filter = Builders<BsonDocument>.Filter.Eq("EstateOwner", ownerID.ToString()); // Converte o UUID para string
+
+            var documents = collection.Find(filter).ToList();
+
+            foreach (var document in documents)
+            {
+                result.Add(document["EstateID"].AsInt32);
             }
 
             return result;
@@ -545,69 +513,50 @@ namespace OpenSim.Data.MongoDB
 
         public bool LinkRegion(UUID regionID, int estateID)
         {
-            string deleteSQL = "delete from estate_map where \"RegionID\" = :RegionID";
-            string insertSQL = "insert into estate_map values (:RegionID, :EstateID)";
-            using (NpgsqlConnection conn = new NpgsqlConnection(m_connectionString))
+            var collection = _db.GetCollection<BsonDocument>("estate_map");
+
+            // Deleta o registro anterior
+            var deleteFilter = Builders<BsonDocument>.Filter.Eq("RegionID", regionID.ToString()); // Converte o UUID para string
+            var deleteResult = collection.DeleteMany(deleteFilter);
+
+            // Cria um novo documento para inserir
+            var newEntry = new BsonDocument
             {
-                conn.Open();
+                { "RegionID", regionID.ToString() }, // Converte o UUID para string
+                { "EstateID", estateID }
+            };
 
-                NpgsqlTransaction transaction = conn.BeginTransaction();
-
-                try
-                {
-                    using (NpgsqlCommand cmd = new NpgsqlCommand(deleteSQL, conn))
-                    {
-                        cmd.Transaction = transaction;
-                        cmd.Parameters.AddWithValue("RegionID", regionID.Guid);
-
-                        cmd.ExecuteNonQuery();
-                    }
-
-                    using (NpgsqlCommand cmd = new NpgsqlCommand(insertSQL, conn))
-                    {
-                        cmd.Transaction = transaction;
-                        cmd.Parameters.AddWithValue("RegionID", regionID.Guid);
-                        cmd.Parameters.AddWithValue("EstateID", estateID);
-
-                        int ret = cmd.ExecuteNonQuery();
-
-                        if (ret != 0)
-                            transaction.Commit();
-                        else
-                            transaction.Rollback();
-
-                        return (ret != 0);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    m_log.Error("[REGION DB]: LinkRegion failed: " + ex.Message);
-                    transaction.Rollback();
-                }
+            try
+            {
+                // Insere o novo documento
+                collection.InsertOne(newEntry);
+                return true; // Se a inserção for bem-sucedida, retorna true
             }
-            return false;
+            catch (MongoWriteException ex) // Captura exceções relacionadas a gravações
+            {
+                m_log.Error("[REGION DB]: LinkRegion failed: " + ex.Message);
+                return false; // Retorna false se ocorrer uma exceção
+            }
+            catch (Exception ex) // Captura outras exceções
+            {
+                m_log.Error("[REGION DB]: LinkRegion failed: " + ex.Message);
+                return false; // Retorna false se ocorrer uma exceção
+            }
         }
 
         public List<UUID> GetRegions(int estateID)
         {
             List<UUID> result = new List<UUID>();
-            string sql = "select \"RegionID\" from estate_map where \"EstateID\" = :EstateID";
-            using (NpgsqlConnection conn = new NpgsqlConnection(m_connectionString))
-            {
-                conn.Open();
-                using (NpgsqlCommand cmd = new NpgsqlCommand(sql, conn))
-                {
-                    cmd.Parameters.AddWithValue("EstateID", estateID);
 
-                    using (IDataReader reader = cmd.ExecuteReader())
-                    {
-                        while (reader.Read())
-                        {
-                            result.Add(DBGuid.FromDB(reader["RegionID"]));
-                        }
-                        reader.Close();
-                    }
-                }
+            var collection = _db.GetCollection<BsonDocument>("estate_map");
+
+            var filter = Builders<BsonDocument>.Filter.Eq("EstateID", estateID);
+            var regions = collection.Find(filter).ToList();
+
+            foreach (var region in regions)
+            {
+                // Converte o RegionID de string para UUID
+                result.Add(DBGuid.FromDB(region["RegionID"].AsString)); // Assume que RegionID é armazenado como string
             }
 
             return result;

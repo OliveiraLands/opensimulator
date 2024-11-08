@@ -29,10 +29,11 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Data;
+using System.Data.Common;
 using System.Reflection;
 using OpenMetaverse;
 using OpenSim.Framework;
-using Npgsql;
+
 
 namespace OpenSim.Data.MongoDB
 {
@@ -56,26 +57,30 @@ namespace OpenSim.Data.MongoDB
         // All non queries are funneled through one connection
         // to increase performance a little
         //
-        protected int ExecuteNonQuery(NpgsqlCommand cmd)
+        protected int ExecuteNonQuery(DbCommand cmd)
         {
-            lock (m_dbLock)
-            {
-                using (NpgsqlConnection dbcon = new NpgsqlConnection(m_connectionString))
-                {
-                    dbcon.Open();
-                    cmd.Connection = dbcon;
+            throw new NotImplementedException();
+            /*
 
-                    try
-                    {
-                        return cmd.ExecuteNonQuery();
-                    }
-                    catch (Exception e)
-                    {
-                        m_log.Error(e.Message, e);
-                        return 0;
-                    }
+        lock (m_dbLock)
+        {
+            using (NpgsqlConnection dbcon = new NpgsqlConnection(m_connectionString))
+            {
+                dbcon.Open();
+                cmd.Connection = dbcon;
+
+                try
+                {
+                    return cmd.ExecuteNonQuery();
+                }
+                catch (Exception e)
+                {
+                    m_log.Error(e.Message, e);
+                    return 0;
                 }
             }
+        }
+            */
         }
     }
 }

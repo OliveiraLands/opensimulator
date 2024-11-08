@@ -33,21 +33,32 @@ using OpenMetaverse;
 using OpenSim.Framework;
 using System.Reflection;
 using System.Text;
-using Npgsql;
+using MongoDB.Driver;
+using MongoDB.Bson;
 
 namespace OpenSim.Data.MongoDB
 {
     public class MongoDBFriendsData : MongoDBGenericTableHandler<FriendsData>, IFriendsData
     {
+        private MongoClient _mongoClient;
+        private MongoDBManager _Database;
+        private IMongoDatabase _db;
+
         public MongoDBFriendsData(string connectionString, string realm)
             : base(connectionString, realm, "FriendsStore")
         {
+            /*
             using (NpgsqlConnection conn = new NpgsqlConnection(m_ConnectionString))
             {
                 conn.Open();
                 Migration m = new Migration(conn, GetType().Assembly, "FriendsStore");
                 m.Update();
             }
+            */
+            _Database = new MongoDBManager(connectionString);
+            _mongoClient = new MongoClient(m_connectionString);
+            _db = _mongoClient.GetDatabase(_Database.GetDatabaseName());
+
         }
 
 
@@ -65,18 +76,16 @@ namespace OpenSim.Data.MongoDB
 
         public bool Delete(UUID principalID, string friend)
         {
-            using (NpgsqlConnection conn = new NpgsqlConnection(m_ConnectionString))
-            using (NpgsqlCommand cmd = new NpgsqlCommand())
-            {
-                cmd.CommandText = String.Format("delete from {0} where \"PrincipalID\" = :PrincipalID and \"Friend\" = :Friend", m_Realm);
-                cmd.Parameters.Add(m_database.CreateParameter("PrincipalID", principalID.ToString()));
-                cmd.Parameters.Add(m_database.CreateParameter("Friend", friend));
-                cmd.Connection = conn;
-                conn.Open();
-                cmd.ExecuteNonQuery();
+            var collection = _db.GetCollection<BsonDocument>(m_Realm);
 
-                return true;
-            }
+            var filter = Builders<BsonDocument>.Filter.And(
+                Builders<BsonDocument>.Filter.Eq("PrincipalID", principalID.ToString()),
+                Builders<BsonDocument>.Filter.Eq("Friend", friend)
+            );
+
+            var result = collection.DeleteOne(filter);
+
+            return result.DeletedCount > 0; //
         }
 
         public FriendsData[] GetFriends(string principalID)
@@ -93,18 +102,30 @@ namespace OpenSim.Data.MongoDB
 
         public FriendsData[] GetFriends(UUID principalID)
         {
-            using (NpgsqlConnection conn = new NpgsqlConnection(m_ConnectionString))
-            using (NpgsqlCommand cmd = new NpgsqlCommand())
-            {
+            var collection = _db.GetCollection<BsonDocument>(m_Realm);
 
-                cmd.CommandText = String.Format("select a.*,case when b.\"Flags\" is null then '-1' else b.\"Flags\" end as \"TheirFlags\" from {0} as a " +
-                                                " left join {0} as b on a.\"PrincipalID\" = b.\"Friend\" and a.\"Friend\" = b.\"PrincipalID\" " +
-                                                " where a.\"PrincipalID\" = :PrincipalID", m_Realm);
-                cmd.Parameters.Add(m_database.CreateParameter("PrincipalID", principalID.ToString()));
-                cmd.Connection = conn;
-                conn.Open();
-                return DoQuery(cmd);
+            var filter = Builders<BsonDocument>.Filter.Eq("PrincipalID", principalID.ToString());
+            var projection = Builders<BsonDocument>.Projection.Include("Friend").Include("Flags");
+
+            var friendsList = collection.Find(filter).Project(projection).ToList();
+
+            var result = new List<FriendsData>();
+
+            foreach (var doc in friendsList)
+            {
+                string? theirflags = doc["Flags"] != null ? doc["Flags"].AsString : "-1";
+
+                var friendData = new FriendsData
+                {
+                    // Preencha as propriedades de FriendsData conforme necessário, por exemplo:
+                    Friend = doc["Friend"].AsString
+                    //Data["Friend, "Flags"] = theirflags
+                };
+
+                result.Add(friendData);
             }
+
+            return result.ToArray();
         }
 
         public FriendsData[] GetFriends(Guid principalID)

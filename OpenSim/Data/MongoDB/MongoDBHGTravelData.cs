@@ -31,9 +31,11 @@ using System.Data;
 using System.Reflection;
 using System.Threading;
 using log4net;
+using MongoDB.Bson;
+using MongoDB.Driver;
 using OpenMetaverse;
 using OpenSim.Framework;
-using Npgsql;
+
 
 namespace OpenSim.Data.MongoDB
 {
@@ -42,9 +44,16 @@ namespace OpenSim.Data.MongoDB
     /// </summary>
     public class MongoDBHGTravelData : MongoDBGenericTableHandler<HGTravelingData>, IHGTravelingData
     {
-//        private static readonly ILog m_log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
+        //        private static readonly ILog m_log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
+        private MongoDBManager m_database;
+        private MongoClient _mongoClient;
+        private IMongoDatabase _db;
 
-        public MongoDBHGTravelData(string connectionString, string realm) : base(connectionString, realm, "HGTravelStore") { }
+        public MongoDBHGTravelData(string connectionString, string realm) : base(connectionString, realm, "HGTravelStore") {
+            m_database = new MongoDBManager(connectionString);
+            _mongoClient = new MongoClient(connectionString);
+            _db = _mongoClient.GetDatabase(m_database.GetDatabaseName());
+        }
 
         public HGTravelingData Get(UUID sessionID)
         {
@@ -68,12 +77,15 @@ namespace OpenSim.Data.MongoDB
 
         public void DeleteOld()
         {
-            using (NpgsqlCommand cmd = new NpgsqlCommand())
-            {
-                cmd.CommandText = String.Format(@"delete from {0} where ""TMStamp"" < CURRENT_DATE - INTERVAL '2 day'", m_Realm);
+            var collection = _db.GetCollection<BsonDocument>(m_Realm);
 
-                ExecuteNonQuery(cmd);
-            }
+            // Define o filtro para documentos onde "TMStamp" é anterior a 2 dias da data atual
+            var filter = Builders<BsonDocument>.Filter.Lt("TMStamp", DateTime.UtcNow.AddDays(-2));
+
+            // Executa a exclusão com base no filtro
+            var result = collection.DeleteMany(filter);
+
+            Console.WriteLine($"{result.DeletedCount} documentos antigos foram deletados.");
 
         }
     }

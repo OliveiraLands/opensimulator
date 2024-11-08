@@ -30,9 +30,10 @@ using System.Collections.Generic;
 using System.Data;
 using System.Reflection;
 using log4net;
+using MongoDB.Bson;
+using MongoDB.Driver;
 using OpenMetaverse;
 using OpenSim.Framework;
-using Npgsql;
 
 namespace OpenSim.Data.MongoDB
 {
@@ -45,10 +46,13 @@ namespace OpenSim.Data.MongoDB
 
         private static readonly ILog m_log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
 
+        private MongoDBManager m_database;
+        private MongoClient _mongoClient;
+        private IMongoDatabase _db;
+
         /// <summary>
         /// The database manager
         /// </summary>
-        private MongoDBManager database;
         private string m_connectionString;
 
         #region IPlugin members
@@ -68,10 +72,15 @@ namespace OpenSim.Data.MongoDB
         public void Initialise(string connectionString)
         {
             m_connectionString = connectionString;
-            database = new MongoDBManager(connectionString);
+            // database = new MongoDBManager(connectionString);
 
             //New migrations check of store
-            database.CheckMigration(_migrationStore);
+            /// database.CheckMigration(_migrationStore);
+
+            m_database = new MongoDBManager(connectionString);
+            _mongoClient = new MongoClient(connectionString);
+            _db = _mongoClient.GetDatabase(m_database.GetDatabaseName());
+
         }
 
         /// <summary>
@@ -88,7 +97,7 @@ namespace OpenSim.Data.MongoDB
         /// </summary>
         public void Dispose()
         {
-            database = null;
+            m_database = null;
         }
 
         /// <summary>
@@ -97,7 +106,7 @@ namespace OpenSim.Data.MongoDB
         /// <returns>A string containing the DB provider</returns>
         public string Version
         {
-            get { return database.getVersion(); }
+            get { return m_database.getVersion(); }
         }
 
         #endregion
@@ -158,20 +167,19 @@ namespace OpenSim.Data.MongoDB
         /// <returns>A folder class</returns>
         public InventoryFolderBase getInventoryFolder(UUID folderID)
         {
-            string sql = "SELECT * FROM inventoryfolders WHERE \"folderID\" = :folderID";
-            using (NpgsqlConnection conn = new NpgsqlConnection(m_connectionString))
-            using (NpgsqlCommand cmd = new NpgsqlCommand(sql, conn))
+            var collection = _db.GetCollection<BsonDocument>("inventoryfolders");
+
+            // Define o filtro para encontrar o documento pelo "folderID"
+            var filter = Builders<BsonDocument>.Filter.Eq("folderID", folderID);
+
+            // Executa a busca no MongoDB
+            var result = collection.Find(filter).FirstOrDefault();
+
+            if (result != null)
             {
-                cmd.Parameters.Add(database.CreateParameter("folderID", folderID));
-                conn.Open();
-                using (NpgsqlDataReader reader = cmd.ExecuteReader())
-                {
-                    if (reader.Read())
-                    {
-                        return readInventoryFolder(reader);
-                    }
-                }
+                return ReadInventoryFolder(result);
             }
+
             m_log.InfoFormat("[INVENTORY DB] : Found no inventory folder with ID : {0}", folderID);
             return null;
         }

@@ -32,29 +32,43 @@ using System.Reflection;
 using OpenSim.Framework;
 using OpenMetaverse;
 using log4net;
-using Npgsql;
+using MongoDB.Driver;
+using MongoDB.Driver.Core.Configuration;
+using MongoDB.Bson;
 
 namespace OpenSim.Data.MongoDB
 {
     public class MongoDBGroupsData : IGroupsData
     {
-        private PGSqlGroupsGroupsHandler m_Groups;
-        private PGSqlGroupsMembershipHandler m_Membership;
-        private PGSqlGroupsRolesHandler m_Roles;
-        private PGSqlGroupsRoleMembershipHandler m_RoleMembership;
-        private PGSqlGroupsInvitesHandler m_Invites;
-        private PGSqlGroupsNoticesHandler m_Notices;
-        private PGSqlGroupsPrincipalsHandler m_Principals;
+        private MongoGroupsGroupsHandler m_Groups;
+        private MongoGroupsMembershipHandler m_Membership;
+        private MongoGroupsRolesHandler m_Roles;
+        private MongoGroupsRoleMembershipHandler m_RoleMembership;
+        private MongoGroupsInvitesHandler m_Invites;
+        private MongoGroupsNoticesHandler m_Notices;
+        private MongoGroupsPrincipalsHandler m_Principals;
 
+        private MongoDBManager m_database;
+        private MongoClient _mongoClient;
+        private IMongoDatabase _db;
+
+        private string m_realm;
         public MongoDBGroupsData(string connectionString, string realm)
         {
-            m_Groups = new PGSqlGroupsGroupsHandler(connectionString, realm + "_groups", realm + "_Store");
-            m_Membership = new PGSqlGroupsMembershipHandler(connectionString, realm + "_membership");
-            m_Roles = new PGSqlGroupsRolesHandler(connectionString, realm + "_roles");
-            m_RoleMembership = new PGSqlGroupsRoleMembershipHandler(connectionString, realm + "_rolemembership");
-            m_Invites = new PGSqlGroupsInvitesHandler(connectionString, realm + "_invites");
-            m_Notices = new PGSqlGroupsNoticesHandler(connectionString, realm + "_notices");
-            m_Principals = new PGSqlGroupsPrincipalsHandler(connectionString, realm + "_principals");
+            m_realm = realm;
+
+            m_Groups = new MongoGroupsGroupsHandler(connectionString, realm + "_groups", realm + "_Store");
+            m_Membership = new MongoGroupsMembershipHandler(connectionString, realm + "_membership");
+            m_Roles = new MongoGroupsRolesHandler(connectionString, realm + "_roles");
+            m_RoleMembership = new MongoGroupsRoleMembershipHandler(connectionString, realm + "_rolemembership");
+            m_Invites = new MongoGroupsInvitesHandler(connectionString, realm + "_invites");
+            m_Notices = new MongoGroupsNoticesHandler(connectionString, realm + "_notices");
+            m_Principals = new MongoGroupsPrincipalsHandler(connectionString, realm + "_principals");
+
+            m_database = new MongoDBManager(connectionString);
+            _mongoClient = new MongoClient(connectionString);
+            _db = _mongoClient.GetDatabase(m_database.GetDatabaseName());
+
         }
 
         #region groups table
@@ -84,17 +98,23 @@ namespace OpenSim.Data.MongoDB
         public GroupData[] RetrieveGroups(string pattern)
         {
 
-            if (string.IsNullOrEmpty(pattern)) // True for where clause
-            {
-                pattern = "1";
+            var collection = _db.GetCollection<GroupData>(m_realm);
 
-                return m_Groups.Get(pattern);
+            if (string.IsNullOrEmpty(pattern))
+            {
+                // Retorna todos os grupos
+                var filter = Builders<GroupData>.Filter.Empty;
+                return collection.Find(filter).ToList().ToArray();
             }
             else
             {
-                pattern = " \"ShowInList\" = 1 AND lower(\"Name\") LIKE lower('%" + pattern + "%')";
+                // Aplica o filtro de `ShowInList` e busca por nome que corresponda ao padrão
+                var filter = Builders<GroupData>.Filter.And(
+                    Builders<GroupData>.Filter.Eq("ShowInList", true),
+                    Builders<GroupData>.Filter.Regex("Name", new BsonRegularExpression(pattern, "i"))
+                );
 
-                return m_Groups.Get(pattern, new NpgsqlParameter("pattern", pattern));
+                return collection.Find(filter).ToList().ToArray();
             }
         }
 
@@ -357,7 +377,7 @@ namespace OpenSim.Data.MongoDB
         #endregion
     }
 
-    public class PGSqlGroupsGroupsHandler : MongoDBGenericTableHandler<GroupData>
+    public class MongoGroupsGroupsHandler : MongoDBGenericTableHandler<GroupData>
     {
         protected override Assembly Assembly
         {
@@ -365,14 +385,14 @@ namespace OpenSim.Data.MongoDB
             get { return GetType().Assembly; }
         }
 
-        public PGSqlGroupsGroupsHandler(string connectionString, string realm, string store)
+        public MongoGroupsGroupsHandler(string connectionString, string realm, string store)
             : base(connectionString, realm, store)
         {
         }
 
     }
 
-    public class PGSqlGroupsMembershipHandler : MongoDBGenericTableHandler<MembershipData>
+    public class MongoGroupsMembershipHandler : MongoDBGenericTableHandler<MembershipData>
     {
         protected override Assembly Assembly
         {
@@ -380,14 +400,14 @@ namespace OpenSim.Data.MongoDB
             get { return GetType().Assembly; }
         }
 
-        public PGSqlGroupsMembershipHandler(string connectionString, string realm)
+        public MongoGroupsMembershipHandler(string connectionString, string realm)
             : base(connectionString, realm, string.Empty)
         {
         }
 
     }
 
-    public class PGSqlGroupsRolesHandler : MongoDBGenericTableHandler<RoleData>
+    public class MongoGroupsRolesHandler : MongoDBGenericTableHandler<RoleData>
     {
         protected override Assembly Assembly
         {
@@ -395,14 +415,14 @@ namespace OpenSim.Data.MongoDB
             get { return GetType().Assembly; }
         }
 
-        public PGSqlGroupsRolesHandler(string connectionString, string realm)
+        public MongoGroupsRolesHandler(string connectionString, string realm)
             : base(connectionString, realm, string.Empty)
         {
         }
 
     }
 
-    public class PGSqlGroupsRoleMembershipHandler : MongoDBGenericTableHandler<RoleMembershipData>
+    public class MongoGroupsRoleMembershipHandler : MongoDBGenericTableHandler<RoleMembershipData>
     {
         protected override Assembly Assembly
         {
@@ -410,66 +430,64 @@ namespace OpenSim.Data.MongoDB
             get { return GetType().Assembly; }
         }
 
-        public PGSqlGroupsRoleMembershipHandler(string connectionString, string realm)
+        public MongoGroupsRoleMembershipHandler(string connectionString, string realm)
             : base(connectionString, realm, string.Empty)
         {
         }
 
     }
 
-    public class PGSqlGroupsInvitesHandler : MongoDBGenericTableHandler<InvitationData>
+    public class MongoGroupsInvitesHandler : MongoDBGenericTableHandler<InvitationData>
     {
+        private MongoDBManager m_database;
+        private MongoClient _mongoClient;
+        private IMongoDatabase _db;
         protected override Assembly Assembly
         {
-            // WARNING! Moving migrations to this assembly!!!
             get { return GetType().Assembly; }
         }
 
-        public PGSqlGroupsInvitesHandler(string connectionString, string realm)
+        public MongoGroupsInvitesHandler(string connectionString, string realm)
             : base(connectionString, realm, string.Empty)
         {
+            m_database = new MongoDBManager(connectionString);
+            _mongoClient = new MongoClient(connectionString);
+            _db = _mongoClient.GetDatabase(m_database.GetDatabaseName());
         }
 
         public void DeleteOld()
         {
-
-            using (NpgsqlCommand cmd = new NpgsqlCommand())
-            {
-                cmd.CommandText = String.Format("delete from {0} where \"TMStamp\"::abstime::timestamp < now() - INTERVAL '2 week'", m_Realm);
-
-                ExecuteNonQuery(cmd);
-            }
-
+            var filter = Builders<InvitationData>.Filter.Lt("TMStamp", DateTime.UtcNow.AddDays(-14));
+            _db.GetCollection<InvitationData>(m_Realm).DeleteMany(filter);
         }
     }
 
-    public class PGSqlGroupsNoticesHandler : MongoDBGenericTableHandler<NoticeData>
+    public class MongoGroupsNoticesHandler : MongoDBGenericTableHandler<NoticeData>
     {
+        private MongoDBManager m_database;
+        private MongoClient _mongoClient;
+        private IMongoDatabase _db;
         protected override Assembly Assembly
         {
-            // WARNING! Moving migrations to this assembly!!!
             get { return GetType().Assembly; }
         }
 
-        public PGSqlGroupsNoticesHandler(string connectionString, string realm)
+        public MongoGroupsNoticesHandler(string connectionString, string realm)
             : base(connectionString, realm, string.Empty)
         {
+            m_database = new MongoDBManager(connectionString);
+            _mongoClient = new MongoClient(connectionString);
+            _db = _mongoClient.GetDatabase(m_database.GetDatabaseName());
         }
 
         public void DeleteOld()
         {
-
-            using (NpgsqlCommand cmd = new NpgsqlCommand())
-            {
-                cmd.CommandText = String.Format("delete from {0} where \"TMStamp\"::abstime::timestamp < now() - INTERVAL '2 week'", m_Realm);
-
-                ExecuteNonQuery(cmd);
-            }
-
+            var filter = Builders<NoticeData>.Filter.Lt("TMStamp", DateTime.UtcNow.AddDays(-14));
+            _db.GetCollection<NoticeData>(m_Realm).DeleteMany(filter);
         }
     }
 
-    public class PGSqlGroupsPrincipalsHandler : MongoDBGenericTableHandler<PrincipalData>
+    public class MongoGroupsPrincipalsHandler : MongoDBGenericTableHandler<PrincipalData>
     {
         protected override Assembly Assembly
         {
@@ -477,7 +495,7 @@ namespace OpenSim.Data.MongoDB
             get { return GetType().Assembly; }
         }
 
-        public PGSqlGroupsPrincipalsHandler(string connectionString, string realm)
+        public MongoGroupsPrincipalsHandler(string connectionString, string realm)
             : base(connectionString, realm, string.Empty)
         {
         }

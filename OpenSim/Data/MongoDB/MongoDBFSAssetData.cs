@@ -33,8 +33,10 @@ using OpenSim.Framework;
 using OpenSim.Framework.Console;
 using log4net;
 using OpenMetaverse;
-using Npgsql;
-using NpgsqlTypes;
+using MongoDB.Bson;
+using MongoDB.Driver;
+using MongoDB.Driver.Core.Configuration;
+using System.Linq;
 
 namespace OpenSim.Data.MongoDB
 {
@@ -46,6 +48,8 @@ namespace OpenSim.Data.MongoDB
         private long m_ticksToEpoch;
 
         private MongoDBManager m_database;
+        private MongoClient _mongoClient;
+        private IMongoDatabase _db;
         private string m_connectionString;
 
         public MongoDBFSAssetData()
@@ -60,9 +64,11 @@ namespace OpenSim.Data.MongoDB
 
             m_connectionString = connect;
             m_database = new MongoDBManager(m_connectionString);
+            _mongoClient = new MongoClient(m_connectionString);
+            _db = _mongoClient.GetDatabase(m_database.GetDatabaseName());
 
             //New migration to check for DB changes
-            m_database.CheckMigration(_migrationStore);
+            //m_database.CheckMigration(_migrationStore);
         }
 
         public void Initialise()
@@ -98,34 +104,33 @@ namespace OpenSim.Data.MongoDB
 
         public AssetMetadata Get(string id, out string hash)
         {
-            hash = String.Empty;
+            hash = string.Empty;
             AssetMetadata meta = null;
             UUID uuid = new UUID(id);
 
-            string query = String.Format("select \"id\", \"type\", \"hash\", \"create_time\", \"access_time\", \"asset_flags\" from {0} where \"id\" = :id", m_Table);
-            using (NpgsqlConnection dbcon = new NpgsqlConnection(m_connectionString))
-            using (NpgsqlCommand cmd = new NpgsqlCommand(query, dbcon))
+            var collection = _db.GetCollection<BsonDocument>(m_Table);
+            var filter = Builders<BsonDocument>.Filter.Eq("id", uuid.ToString());
+
+            var document = collection.Find(filter).FirstOrDefault();
+
+            if (document != null)
             {
-                dbcon.Open();
-                cmd.Parameters.Add(m_database.CreateParameter("id", uuid));
-                using (NpgsqlDataReader reader = cmd.ExecuteReader(CommandBehavior.Default))
+                meta = new AssetMetadata
                 {
-                    if (reader.Read())
-                    {
-                        meta = new AssetMetadata();
-                        hash = reader["hash"].ToString();
-                        meta.ID = id;
-                        meta.FullID = uuid;
-                        meta.Name = String.Empty;
-                        meta.Description = String.Empty;
-                        meta.Type = (sbyte)Convert.ToInt32(reader["type"]);
-                        meta.ContentType = SLUtil.SLAssetTypeToContentType(meta.Type);
-                        meta.CreationDate = Util.ToDateTime(Convert.ToInt32(reader["create_time"]));
-                        meta.Flags = (AssetFlags)Convert.ToInt32(reader["asset_flags"]);
-                        int atime = Convert.ToInt32(reader["access_time"]);
-                        UpdateAccessTime(atime, uuid);
-                    }
-                }
+                    ID = id,
+                    FullID = uuid,
+                    Name = string.Empty,
+                    Description = string.Empty,
+                    Type = (sbyte)document["type"].AsInt32,
+                    ContentType = SLUtil.SLAssetTypeToContentType((sbyte)document["type"].AsInt32),
+                    CreationDate = Util.ToDateTime(document["create_time"].AsInt32),
+                    Flags = (AssetFlags)document["asset_flags"].AsInt32
+                };
+
+                hash = document["hash"].AsString;
+
+                int accessTime = document["access_time"].AsInt32;
+                UpdateAccessTime(accessTime, uuid);
             }
 
             return meta;
@@ -133,60 +138,68 @@ namespace OpenSim.Data.MongoDB
 
         private void UpdateAccessTime(int AccessTime, UUID id)
         {
-            // Reduce DB work by only updating access time if asset hasn't recently been accessed
-            // 0 By Default, Config option is "DaysBetweenAccessTimeUpdates"
+            // Reduz o trabalho no banco de dados, atualizando o tempo de acesso somente se o ativo não foi acessado recentemente
             if (DaysBetweenAccessTimeUpdates > 0 && (DateTime.UtcNow - Utils.UnixTimeToDateTime(AccessTime)).TotalDays < DaysBetweenAccessTimeUpdates)
                 return;
 
-            string query = String.Format("UPDATE {0} SET \"access_time\" = :access_time WHERE \"id\" = :id", m_Table);
-            using (NpgsqlConnection dbcon = new NpgsqlConnection(m_connectionString))
-            using (NpgsqlCommand cmd = new NpgsqlCommand(query, dbcon))
-            {
-                dbcon.Open();
-                int now = (int)((System.DateTime.Now.Ticks - m_ticksToEpoch) / 10000000);
-                cmd.Parameters.Add(m_database.CreateParameter("id", id));
-                cmd.Parameters.Add(m_database.CreateParameter("access_time", now));
-                cmd.ExecuteNonQuery();
-            }
+            var collection = _db.GetCollection<BsonDocument>(m_Table);
+            int now = (int)((DateTime.UtcNow.Ticks - m_ticksToEpoch) / 10000000);
+
+            var filter = Builders<BsonDocument>.Filter.Eq("id", id.ToString());
+            var update = Builders<BsonDocument>.Update.Set("access_time", now);
+
+            collection.UpdateOne(filter, update);
         }
 
         public bool Store(AssetMetadata meta, string hash)
         {
             try
             {
+                var collection = _db.GetCollection<BsonDocument>(m_Table);
                 bool found = false;
-                string oldhash;
-                AssetMetadata existingAsset = Get(meta.ID, out oldhash);
+                int now = (int)((DateTime.UtcNow.Ticks - m_ticksToEpoch) / 10000000);
 
-                string query = String.Format("UPDATE {0} SET \"access_time\" = :access_time WHERE \"id\" = :id", m_Table);
+                // Procura o ativo existente
+                var filter = Builders<BsonDocument>.Filter.Eq("id", meta.FullID.ToString());
+                var existingAsset = collection.Find(filter).FirstOrDefault();
+
                 if (existingAsset == null)
                 {
-                   query = String.Format("insert into {0} (\"id\", \"type\", \"hash\", \"asset_flags\", \"create_time\", \"access_time\") values ( :id, :type, :hash, :asset_flags, :create_time, :access_time)", m_Table);
-                   found = true;
+                    // Insere um novo documento, pois o ativo não existe
+                    var newAsset = new BsonDocument
+            {
+                { "id", meta.FullID.ToString() },
+                { "type", meta.Type },
+                { "hash", hash },
+                { "asset_flags", Convert.ToInt32(meta.Flags) },
+                { "create_time", now },
+                { "access_time", now }
+            };
+                    collection.InsertOne(newAsset);
+                    found = true;
+                }
+                else
+                {
+                    // Atualiza o tempo de acesso do ativo existente
+                    var update = Builders<BsonDocument>.Update
+                        .Set("access_time", now)
+                        .Set("hash", hash)
+                        .Set("type", meta.Type)
+                        .Set("asset_flags", Convert.ToInt32(meta.Flags));
+                    collection.UpdateOne(filter, update);
                 }
 
-                using (NpgsqlConnection dbcon = new NpgsqlConnection(m_connectionString))
-                using (NpgsqlCommand cmd = new NpgsqlCommand(query, dbcon))
-                {
-                    dbcon.Open();
-                    int now = (int)((System.DateTime.Now.Ticks - m_ticksToEpoch) / 10000000);
-                    cmd.Parameters.Add(m_database.CreateParameter("id", meta.FullID));
-                    cmd.Parameters.Add(m_database.CreateParameter("type", meta.Type));
-                    cmd.Parameters.Add(m_database.CreateParameter("hash", hash));
-                    cmd.Parameters.Add(m_database.CreateParameter("asset_flags", Convert.ToInt32(meta.Flags)));
-                    cmd.Parameters.Add(m_database.CreateParameter("create_time", now));
-                    cmd.Parameters.Add(m_database.CreateParameter("access_time", now));
-                    cmd.ExecuteNonQuery();
-                }
                 return found;
+
             }
-            catch(Exception e)
+            catch (Exception e)
             {
-                m_log.Error("[PGSQL FSASSETS] Failed to store asset with ID " + meta.ID);
+                m_log.Error("[MongoDB FSASSETS] Failed to store asset with ID " + meta.ID);
                 m_log.Error(e.ToString());
                 return false;
             }
         }
+
 
         /// <summary>
         /// Check if the assets exist in the database.
@@ -198,59 +211,43 @@ namespace OpenSim.Data.MongoDB
             if (uuids.Length == 0)
                 return new bool[0];
 
-            HashSet<UUID> exists = new HashSet<UUID>();
+            // Converte os UUIDs para string e cria uma lista de filtros para a consulta
+            var uuidStrings = uuids.Select(uuid => uuid.ToString()).ToList();
+            var filter = Builders<BsonDocument>.Filter.In("id", uuidStrings);
 
-            string ids = "'" + string.Join("','", uuids) + "'";
-            string query = string.Format("select \"id\" from {1} where id in ({0})", ids, m_Table);
-            using (NpgsqlConnection dbcon = new NpgsqlConnection(m_connectionString))
-            using (NpgsqlCommand cmd = new NpgsqlCommand(query, dbcon))
+            // Executa a consulta no MongoDB
+            var collection = _db.GetCollection<BsonDocument>(m_Table);
+            var results = collection.Find(filter).ToList();
+
+            // Constrói o conjunto de UUIDs encontrados
+            HashSet<UUID> exists = new HashSet<UUID>();
+            foreach (var doc in results)
             {
-                dbcon.Open();
-                using (NpgsqlDataReader reader = cmd.ExecuteReader(CommandBehavior.Default))
-                {
-                    while (reader.Read())
-                    {
-                        UUID id = DBGuid.FromDB(reader["id"]);
-                        exists.Add(id);
-                    }
-                }
+                exists.Add(new UUID(doc["id"].AsString));
             }
 
-            bool[] results = new bool[uuids.Length];
+            // Preenche o array de retorno com `true` ou `false` conforme o UUID existir no conjunto
+            bool[] output = new bool[uuids.Length];
             for (int i = 0; i < uuids.Length; i++)
-                results[i] = exists.Contains(uuids[i]);
-            return results;
+            {
+                output[i] = exists.Contains(uuids[i]);
+            }
+
+            return output;
         }
 
         public int Count()
         {
-            int count = 0;
-            string query = String.Format("select count(*) as count from {0}", m_Table);
-            using (NpgsqlConnection dbcon = new NpgsqlConnection(m_connectionString))
-            using (NpgsqlCommand cmd = new NpgsqlCommand(query, dbcon))
-            {
-                dbcon.Open();
-                IDataReader reader = cmd.ExecuteReader();
-                reader.Read();
-                count = Convert.ToInt32(reader["count"]);
-                reader.Close();
-            }
-
-            return count;
+            var collection = _db.GetCollection<BsonDocument>(m_Table);
+            return (int)collection.CountDocuments(new BsonDocument());
         }
 
         public bool Delete(string id)
         {
-            string query = String.Format("delete from {0} where \"id\" = :id", m_Table);
-            using (NpgsqlConnection dbcon = new NpgsqlConnection(m_connectionString))
-            using (NpgsqlCommand cmd = new NpgsqlCommand(query, dbcon))
-            {
-                dbcon.Open();
-                cmd.Parameters.Add(m_database.CreateParameter("id", new UUID(id)));
-                cmd.ExecuteNonQuery();
-            }
-
-            return true;
+            var collection = _db.GetCollection<BsonDocument>(m_Table);
+            var filter = Builders<BsonDocument>.Filter.Eq("_id", new ObjectId(id));
+            var result = collection.DeleteOne(filter);
+            return result.DeletedCount > 0;
         }
 
         public void Import(string conn, string table, int start, int count, bool force, FSStoreDelegate store)
@@ -261,6 +258,7 @@ namespace OpenSim.Data.MongoDB
             {
                 limit = String.Format(" limit {0} offset {1}", start, count);
             }
+            /*
             string query = String.Format("select * from {0}{1}", table, limit);
             try
             {
@@ -306,7 +304,7 @@ namespace OpenSim.Data.MongoDB
                 m_log.ErrorFormat("[PGSQL FSASSETS]: Error importing assets: {0}",
                         e.Message.ToString());
                 return;
-            }
+            }*/
 
             MainConsole.Instance.Output(String.Format("Import done, {0} assets imported", imported));
         }
